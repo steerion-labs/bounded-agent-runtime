@@ -1,0 +1,16 @@
+.DS_Store
+.env
+.env.*
+*.key
+*.pem
+*.pfx
+*.p12
+*.secret
+secrets/
+credentials/
+node_modules/
+__pycache__/
+*.log
+.bounded-agent/
+demo-output/
+.human-gate/

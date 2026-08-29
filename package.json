@@ -1,0 +1,21 @@
+﻿{
+    "name":  "bounded-agent-runtime",
+    "version":  "0.1.0",
+    "private":  false,
+    "type":  "module",
+    "description":  "Reference runtime for bounded autonomous AI engineering workflows",
+    "scripts":  {
+                    "test":  "node --test test/*.test.mjs",
+                    "demo:init":  "node runtime/controller.mjs init examples/task.example.json",
+                    "demo:run":  "node runtime/controller.mjs run",
+                    "demo:approve":  "node runtime/controller.mjs approve",
+                    "demo:reset":  "node runtime/controller.mjs reset",
+                    "gate:keygen":  "node runtime/gate.mjs keygen",
+                    "gate:sign":  "node runtime/gate.mjs sign",
+                    "demo:recover":  "node runtime/controller.mjs recover"
+                },
+    "engines":  {
+                    "node":  "\u003e=20"
+                },
+    "license":  "Apache-2.0"
+}

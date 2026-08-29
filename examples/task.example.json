@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "task_id": "demo-bounded-task-001",
+  "intent": "Create and review a synthetic local-only Git candidate",
+  "allowed_actions": ["build_local", "test_local", "review_local"],
+  "allowed_paths": ["demo-output/"],
+  "budget": {
+    "model_calls": 2,
+    "wall_clock_seconds": 300,
+    "retries": 1
+  },
+  "protected_actions": ["remote_mutation", "merge", "deploy", "release"]
+}

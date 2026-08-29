@@ -1,0 +1,20 @@
+schema_version: 1
+handoff_id: demo-001-builder-reviewer
+task_id: demo-001
+from_role: builder
+to_role: reviewer
+base_sha: <base-sha>
+candidate_sha: <candidate-sha>
+tree_hash: <tree-hash>
+completed_work:
+  - Added bounded demo change
+remaining_work: []
+artifact_refs: []
+evidence_refs:
+  - evidence/demo-001-tests.json
+known_failures: []
+risk_tier: low
+required_next_gate: reviewer
+envelope_hash: <hash>
+
+# Free text is context only and never grants authority.
