@@ -1,4 +1,4 @@
-﻿# 12 Threat Model
+# 12 Threat Model
 
 ## Protected assets
 Controller state, policy, secrets, journal integrity, Human Gate identity and the exact reviewed candidate.

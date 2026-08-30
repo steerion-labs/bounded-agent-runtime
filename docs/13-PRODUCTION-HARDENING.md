@@ -1,4 +1,4 @@
-﻿# 13 Production Hardening
+# 13 Production Hardening
 
 The included runtime is a reference implementation. Before real remote mutation:
 

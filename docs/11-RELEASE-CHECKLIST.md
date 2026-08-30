@@ -1,29 +1,41 @@
 # Release Checklist
 
-A release is not ready because the happy path works. All three review passes below must pass on the exact candidate commit.
+A release is not ready because the happy path works. All passes below must be run against the exact candidate commit.
 
 ## Pass 1: Functional verification
 
 - `node --check` passes for every runtime `.mjs` file.
+- every PowerShell file parses without errors.
 - `npm test` passes with zero skipped or failed tests.
-- the demo reaches `HUMAN_GATE_REQUIRED`.
-- the approval demo records acceptance without remote mutation.
-- illegal transitions, stale leases, fencing mismatch, exhausted budgets, unknown capabilities and stale evidence fail closed.
+- the demo reaches `HUMAN_GATE_REQUIRED` without remote mutation.
+- authenticated approval succeeds only for the exact candidate and configured approver.
 
-## Pass 2: Security and public-safety review
+## Pass 2: Adversarial controller verification
 
-- no tokens, keys, passwords, private email addresses or machine-specific credentials.
-- no private repository names, internal issue/PR references or proprietary source copied from another system.
-- no worker GitHub/cloud/deployment credentials.
-- controller-only directories have no worker grants in the Windows baseline.
-- documentation does not claim production security certification.
-- protected actions remain behind a Human Gate.
+The automated tests must fail closed for:
 
-## Pass 3: Clean-install review
+- forged `ACCEPTED` state
+- state rollback against a newer authenticated journal
+- approval replay after state rollback
+- approval public-key substitution
+- journal truncation and middle-entry tampering
+- candidate drift after approval
+- evidence modification
+- stale lease/fencing takeover
+- hanging worker process beyond wall-clock budget
+- hostile global Git hooks/configuration
+- path traversal and hardlink escape
 
-- clone into a clean directory.
-- run tests without project-specific environment variables.
-- follow the Windows Quickstart from top to bottom.
-- verify scripts parse before elevation is attempted.
-- confirm examples use only synthetic data.
-- confirm a new user can identify the safe stopping point before external side effects.
+## Pass 3: Windows boundary verification
+
+- `Test-HostBaseline.ps1` passes.
+- `Test-StaticAcl.ps1` passes using SID-based checks.
+- `Test-WorkerAccess.ps1` passes using real Builder and Reviewer credentials on the target host.
+- worker identities are non-admin and cannot read controller state, secrets or journal.
+
+## Pass 4: Public-safety and clean-install review
+
+- no secrets, tokens, private keys, personal data or private project references exist in the worktree or reachable history.
+- clone into a clean directory and run the documented commands without project-specific knowledge.
+- README claims match implemented enforcement and clearly distinguish demo mode from protected mode.
+- external mutation remains absent until a separately reviewed idempotent adapter is added.

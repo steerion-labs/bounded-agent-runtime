@@ -2,40 +2,32 @@
 param(
     [string]$ControllerName = 'AgentController',
     [string]$BuilderName = 'AgentBuilder',
-    [string]$ReviewerName = 'AgentReviewer'
+    [string]$ReviewerName = 'AgentReviewer',
+    [Security.SecureString]$ControllerPassword,
+    [Security.SecureString]$BuilderPassword,
+    [Security.SecureString]$ReviewerPassword
 )
-
 $ErrorActionPreference = 'Stop'
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    throw 'Run this script from an elevated PowerShell.'
-}
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run this script from an elevated PowerShell.' }
 
-function New-RandomSecurePassword {
-    $bytes = New-Object byte[] 36
-    [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
-    try {
-        $plain = 'Aa1!' + [Convert]::ToBase64String($bytes)
-        return ConvertTo-SecureString $plain -AsPlainText -Force
+function Ensure-RoleUser {
+    param([string]$Name,[Security.SecureString]$Password)
+    $existing = Get-LocalUser -Name $Name -ErrorAction SilentlyContinue
+    if (-not $existing) {
+        if (-not $Password) { $Password = Read-Host "Enter a strong local service-account password for $Name" -AsSecureString }
+        New-LocalUser -Name $Name -Password $Password -PasswordNeverExpires:$true -UserMayNotChangePassword:$true -AccountNeverExpires | Out-Null
     }
-    finally { [Array]::Clear($bytes, 0, $bytes.Length) }
+    Enable-LocalUser -Name $Name
 }
-
-foreach ($name in @($ControllerName, $BuilderName, $ReviewerName)) {
-    if (-not (Get-LocalUser -Name $name -ErrorAction SilentlyContinue)) {
-        New-LocalUser -Name $name -Password (New-RandomSecurePassword) -PasswordNeverExpires:$false -UserMayNotChangePassword:$true | Out-Null
-    }
-    Enable-LocalUser -Name $name
-}
-
-foreach ($name in @($ControllerName, $BuilderName, $ReviewerName)) {
+Ensure-RoleUser $ControllerName $ControllerPassword
+Ensure-RoleUser $BuilderName $BuilderPassword
+Ensure-RoleUser $ReviewerName $ReviewerPassword
+foreach ($name in @($ControllerName,$BuilderName,$ReviewerName)) {
     $adminMember = Get-LocalGroupMember -Group 'Administrators' -ErrorAction Stop |
         Where-Object { $_.Name -match "\\$([regex]::Escape($name))$" }
     if ($adminMember) { throw "$name must not be an Administrator during runtime." }
 }
-
-Write-Host 'Role accounts ready.'
-Write-Host "Controller: $env:COMPUTERNAME\$ControllerName"
-Write-Host "Builder:    $env:COMPUTERNAME\$BuilderName"
-Write-Host "Reviewer:   $env:COMPUTERNAME\$ReviewerName"
-Write-Host 'Passwords were generated in memory and were not written to disk.'
+Write-Host 'ROLE_ACCOUNTS_PASS'
+Write-Host 'Passwords are operator-supplied, never printed, and never written by this script.'
+Write-Host 'For production, prefer managed service identities and an explicit credential-rotation policy where available.'

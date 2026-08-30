@@ -1,17 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import crypto from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { ensureGitRepo, gitIdentity } from '../core.mjs';
-
-export async function runBuilder(task) {
-  const repo=path.join(os.tmpdir(),`bounded-agent-workspace-${crypto.randomUUID()}`);
-  ensureGitRepo(repo);
-  const out=path.join(repo,'demo-output'); fs.mkdirSync(out,{recursive:true});
-  fs.writeFileSync(path.join(out,'artifact.txt'),`${task.task_id}\nsynthetic reversible demo change\n`);
-  execFileSync('git',['-C',repo,'add','.']);
-  execFileSync('git',['-C',repo,'commit','-q','--allow-empty','-m','synthetic bounded candidate']);
-  const id=gitIdentity(repo);
-  return {task_id:task.task_id,status:'PASS',repository:repo,artifact:'demo-output/artifact.txt',...id};
-}
+const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+if (Object.keys(process.env).some(key => key.startsWith('BOUNDED_AGENT_'))) throw new Error('WORKER_ENV_LEAK');
+const { task, workspace } = input;
+if (!task?.task_id || !workspace) throw new Error('BUILDER_INPUT_INVALID');
+const out = path.join(workspace, 'demo-output');
+fs.mkdirSync(out, { recursive: true });
+fs.writeFileSync(path.join(out, 'artifact.txt'), `${task.task_id}\nsynthetic reversible demo change\n`);
+process.stdout.write(JSON.stringify({ status: 'PASS', artifact: 'demo-output/artifact.txt' }));

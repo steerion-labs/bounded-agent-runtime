@@ -1,31 +1,24 @@
 # 06 Human Gate
 
-A notification is not an approval.
+A notification is not an approval. Silence is not approval. Editable state is not approval.
 
-Human decisions should be authenticated, durable and bound to the exact task and candidate.
-
-Minimum decision record:
+The reference Human Gate uses Ed25519 and binds the decision to:
 
 ```yaml
 task_id: <id>
-candidate_sha: <sha>
-tree_hash: <tree>
+candidate_sha: <git commit>
+tree_hash: <git tree>
 task_state_version: <version>
-decision: ACCEPT | REJECT
-decision_identity: <authenticated identity>
-decided_at: <timestamp>
+nonce: <one-time nonce>
+decision: ACCEPT
+decision_identity: <configured identity>
+public_key_fingerprint: <pinned SHA-256 fingerprint>
 ```
 
-## Human Gate examples
+The signature itself, decision identity, public-key fingerprint and signed-payload hash are persisted in the approval record.
 
-Require a gate for:
+The nonce is consumed in a controller secret ledger protected by an HMAC. Replacing `state.json` with an older Human Gate state does not make an already consumed approval reusable.
 
-- protected branch merge
-- production deployment or release
-- secrets or credentials
-- permission expansion
-- policy/capability changes
-- external publishing
-- irreversible or high-impact mutations
+Before a protected action is authorized, the controller re-verifies the approval signature, key fingerprint, decision identity, nonce consumption, task/candidate/tree binding, current evidence integrity and current workspace Git identity.
 
-Timeout, silence or channel failure must leave the task blocked.
+Production systems should keep the trusted public key or signer configuration outside worker-writable state and use a protected identity/signing service where appropriate.

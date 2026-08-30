@@ -1,61 +1,64 @@
 # Bounded Agent Runtime
 
-**A Steerion Labs open-source reference for building autonomous AI engineering systems with bounded authority, isolated execution, verified evidence and explicit human gates.**
+**A Steerion Labs open-source reference runtime for bounded autonomous AI engineering.**
 
-Bounded Agent Runtime helps teams use coding agents without giving a model unrestricted authority over a workstation, repository, credentials or deployment surface.
+Bounded Agent Runtime helps teams use coding agents without making model output, worker text or tool output an authority source.
 
 ## Why use it?
 
-Most agent setups focus on what an AI can do. This project focuses on what it is allowed to do, how that authority is enforced and how a human can verify the result before a protected action occurs.
+Most agent frameworks focus on what an AI can do. This project focuses on what it is allowed to do and what evidence must exist before a protected action can be authorized.
 
-It gives you a reusable starting point for:
+The reference implementation demonstrates:
 
-- separating Controller, Builder and Reviewer responsibilities
-- limiting worker filesystem and credential access
-- enforcing capabilities, leases, fencing and execution budgets
-- binding tests and reviews to the exact Git commit and tree
-- journaling state transitions for recovery and audit
-- requiring authenticated human approval for protected actions
-- connecting different model or coding-agent providers without making them the authority source
+- deterministic controller state transitions
+- task-declared capabilities and protected actions
+- lease and fencing checks
+- model-call, retry and wall-clock budgets
+- controller-derived Git commit/tree identity
+- allowlisted candidate paths
+- HMAC-authenticated evidence
+- HMAC-chained journal integrity with truncation detection
+- Ed25519 Human Gate approvals with identity and public-key fingerprint pinning
+- persistent one-time approval nonce consumption
+- Windows role-account and protected-directory setup
 
-## Good fit
-
-Use this repository when you want agents to perform bounded engineering work automatically while keeping merge, deploy, release, permission, policy and secret changes under explicit control.## Core invariant
+## Core invariant
 
 ```text
 Agents think.
 Controller authorizes execution.
-Workers execute within bounded capabilities.
-Evidence is bound to the exact candidate.
+Workers execute only bounded tasks.
+Controller verifies candidate identity and evidence.
 Humans authorize protected decisions.
 ```
-
 ## Reference flow
 
 ```text
-Task -> Controller -> Builder -> Test/Evidence -> Validated Handoff
-     -> Independent Reviewer -> Controller -> Human Gate
+Task -> Controller -> Builder process -> Controller Git verification
+     -> Reviewer process -> Controller re-verification -> Human Gate
 ```
 
-The included Node.js reference runtime implements deterministic state transitions, leases/fencing checks, enforced model/retry/wall-clock budgets, real local Git commit/tree binding, journal reconciliation and a protected Human Gate. It deliberately performs no real remote mutation.
+The demo performs no remote mutation. Builder and Reviewer run as separate child processes with a reduced environment, but the demo does **not** claim OS-account isolation. Windows scripts provision separate identities and ACL zones; production use must run worker adapters under those identities and verify token-level access on the target host.
 
-The demo Builder and Reviewer adapters are logically separated but execute in one Node.js process. Do not treat that demo as OS-level reviewer independence. Real use requires separate worker identities/processes and verified effective-access boundaries.
+## Demo mode versus protected mode
 
-## What is included
+Without `BOUNDED_AGENT_PROTECTED_MODE=1`, runtime state is stored under a local `.bounded-agent` directory for demonstration and tests. This is not a security boundary.
 
-- provider-neutral controller reference runtime
-- Builder and Reviewer demo adapters
-- one canonical task model
-- authority, evidence and handoff examples
-- Windows role-account and ACL setup scripts
-- host-baseline and effective-access checks
-- negative tests for stale leases, fencing, budgets, capability denial, stale evidence, journal tampering, approval replay and candidate drift
-- threat model, production-hardening guidance and release checklist## Install and verify
+The Windows installer creates `C:\BoundedAgentRuntime`, protects controller-only zones with ACLs, and sets:
 
-Prerequisites: Windows 11 Pro or Enterprise, Git, Node.js 20+ and PowerShell 5.1+ or PowerShell 7.
+```text
+BOUNDED_AGENT_RUNTIME_ROOT=C:\BoundedAgentRuntime
+BOUNDED_AGENT_PROTECTED_MODE=1
+```
+
+Protected mode refuses to run without an absolute configured runtime root. Host ACLs remain an operating-system responsibility and must be verified separately.
+
+## Quick demo
+
+Prerequisites: Git, Node.js 20+ and PowerShell or another shell capable of running Node.js commands.
 
 ```powershell
-git clone <repository-url>
+git clone https://github.com/steerion-labs/bounded-agent-runtime.git
 cd bounded-agent-runtime
 npm test
 npm run demo:reset
@@ -63,45 +66,76 @@ npm run demo:init
 npm run demo:run
 ```
 
-The demo must stop at `HUMAN_GATE_REQUIRED` and must not configure a Git remote or perform any external mutation.
+Expected stop:
 
-To install the Windows isolation baseline, open an elevated PowerShell and run:
-
-```powershell
-.\scripts\windows\Install-BoundedAgentRuntime.ps1
-.\scripts\verify\Test-HostBaseline.ps1
-.\scripts\verify\Test-EffectiveAccess.ps1
+```text
+HUMAN_GATE_REQUIRED
 ```
-
-Do not attach source-control, cloud or deployment credentials until the verification checks pass on the target host.
-
 ## Authenticated Human Gate demo
+
+Create a local demonstration key pair:
 
 ```powershell
 npm run gate:keygen -- .human-gate
+```
+
+Copy the printed `PUBLIC_KEY_FINGERPRINT`, then configure the approver policy:
+
+```powershell
+$env:BOUNDED_AGENT_APPROVER_IDENTITY = 'demo-approver'
 $env:BOUNDED_AGENT_APPROVAL_PUBLIC_KEY = (Resolve-Path .human-gate\public.pem).Path
+$env:BOUNDED_AGENT_APPROVAL_KEY_FINGERPRINT = '<printed fingerprint>'
+npm run demo:reset
 npm run demo:init
 npm run demo:run
 $signature = node runtime\gate.mjs sign .human-gate\private.pem
 node runtime\controller.mjs approve $signature
-```The Ed25519 approval signature is bound to the exact task, candidate, tree, state version and nonce. The demo records acceptance but still does not merge, deploy, publish or mutate a remote system.
+node runtime\controller.mjs authorize-protected remote_mutation
+```
 
-## Security model
+The approval record persists the signature, decision identity, key fingerprint and signed payload hash. The nonce is consumed in a controller secret ledger, so rolling back editable state does not make an old approval reusable.
 
-Workers must not receive controller credentials. Free text, model output, repository text, handoffs and memory are untrusted context, never authority. Unknown capabilities fail closed. Protected actions require an authenticated Human Gate bound to the exact task and candidate.
+The final authorization command still performs **no remote mutation**. It only proves that the protected-action authorization checks pass for the exact approved candidate.
 
-For the full setup path, read:
+## Windows protected baseline
+
+Run from elevated Windows PowerShell:
+
+```powershell
+.\scripts\windows\Install-BoundedAgentRuntime.ps1
+.\scripts\verify\Test-HostBaseline.ps1
+.\scripts\verify\Test-StaticAcl.ps1
+```
+
+For token-level verification, provide the worker credentials interactively:
+
+```powershell
+$builder = Get-Credential '.\AgentBuilder'
+$reviewer = Get-Credential '.\AgentReviewer'
+.\scripts\verify\Test-WorkerAccess.ps1 -BuilderCredential $builder -ReviewerCredential $reviewer
+```
+## Security boundaries
+
+Workers must not receive controller credentials, Human Gate keys, journal integrity keys or authority to expand their own task. Repository text, prompts, model output, handoffs and memory are untrusted context.
+
+The controller derives Git identity itself, verifies the candidate again after review and again before protected authorization, and rejects evidence whose HMAC or candidate binding does not match current state.
+
+External mutation adapters are intentionally absent. Before adding merge, deploy, release or other side effects, implement idempotency and reconciliation for that adapter and keep the protected-action check immediately before the mutation.
+
+## Documentation
 
 1. `docs/00-PREREQUISITES.md`
-2. `docs/09-QUICKSTART-WINDOWS.md`
-3. `docs/08-VERIFY-BEFORE-AUTONOMY.md`
-4. `docs/12-THREAT-MODEL.md`
-5. `docs/13-PRODUCTION-HARDENING.md`
-6. `docs/11-RELEASE-CHECKLIST.md`
+2. `docs/02-SECURITY-BOUNDARIES.md`
+3. `docs/06-HUMAN-GATE.md`
+4. `docs/07-RECOVERY-AND-BUDGETS.md`
+5. `docs/09-QUICKSTART-WINDOWS.md`
+6. `docs/12-THREAT-MODEL.md`
+7. `docs/13-PRODUCTION-HARDENING.md`
+8. `docs/11-RELEASE-CHECKLIST.md`
 
 ## Scope
 
-This repository is a reference implementation and setup pattern, not a security certification. Real-world use requires target-host verification, separate worker identities/processes and bounded adapters for the tools you choose to connect.
+This repository is a reference implementation, not a security certification. The controller security properties are tested in this repository; OS isolation depends on the actual host, worker launch mechanism, credentials, installed tools and network policy. Re-run adversarial tests after replacing demo adapters or adding any external side effect.
 
 ## License
 

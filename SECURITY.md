@@ -1,9 +1,25 @@
 # Security Policy
 
-Do not submit secrets, tokens, private keys, customer data, proprietary source code or production credentials.
+## Supported versions
 
-For vulnerabilities that could enable credential exposure, authority bypass, sandbox escape, reviewer bypass or protected mutation, use GitHub private vulnerability reporting when available instead of a public issue.
+Security fixes are applied to the current `main` branch. Until tagged releases are published, no older commit should be assumed to receive security backports.
 
-Examples and test data in this repository must remain synthetic.
+## Reporting a vulnerability
 
-This project describes a security architecture pattern. It does not claim that copying the scripts alone creates a hardened production sandbox. Verify effective access and adversarial behavior on your actual host before granting autonomous mutation capability.
+Do not open a public issue for a vulnerability that could enable authority bypass, credential exposure, sandbox escape, reviewer bypass, evidence forgery, Human Gate bypass or protected mutation.
+
+Use GitHub Private Vulnerability Reporting for this repository when available. If that channel is unavailable, open a minimal public issue asking the maintainers for a private reporting channel without including exploit details.
+
+Do not submit real secrets, tokens, private keys, customer data, proprietary source code or production credentials in a report.
+
+## Response expectations
+
+This is a community open-source reference project and does not offer a contractual SLA. Maintainers should acknowledge valid private reports as soon as practical, keep exploit details private while a fix is being prepared, and publish remediation notes after affected code is fixed.
+
+## Security scope
+
+The repository contains controller enforcement logic plus Windows isolation setup and verification scripts. It is not a security certification for a host.
+
+The demo child processes do not prove separate Windows-token isolation. Before enabling real external mutations, operators must verify the actual worker identities, filesystem access, credentials, installed tools, network policy and mutation adapter behavior on the target host.
+
+Any replacement adapter, new tool fallback, policy change or external side effect changes the threat model and requires re-verification.

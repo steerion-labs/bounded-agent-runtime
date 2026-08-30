@@ -2,7 +2,7 @@
 
 ## 1. Prerequisites
 
-Use Windows 11 with PowerShell 5.1+ or PowerShell 7, Git and Node.js 20+. Start on a non-production machine or disposable test environment.
+Use Windows 11 Pro or Enterprise, PowerShell 5.1+ or PowerShell 7, Git and Node.js 20+. Start on a non-production machine or disposable test environment.
 
 ## 2. Verify the repository
 
@@ -13,9 +13,9 @@ npm run demo:init
 npm run demo:run
 ```
 
-The demo must stop at `HUMAN_GATE_REQUIRED`. It must not perform a remote mutation.
+The demo must stop at `HUMAN_GATE_REQUIRED` and must not perform a remote mutation.
 
-## 3. Create the Windows baseline
+## 3. Create the protected Windows baseline
 
 Open an elevated PowerShell:
 
@@ -23,25 +23,34 @@ Open an elevated PowerShell:
 .\scripts\windows\Install-BoundedAgentRuntime.ps1
 ```
 
-This creates generic local role identities and the protected directory layout under `C:\BoundedAgentRuntime`.
+The account script prompts securely for passwords only when a role account does not already exist. Passwords are not printed or written by the installer.
 
-## 4. Verify the baseline
+The installer creates `C:\BoundedAgentRuntime`, hardens its ACL zones and sets the machine environment variables used by protected mode.
+## 4. Run static ACL verification
 
 ```powershell
 .\scripts\verify\Test-HostBaseline.ps1
-.\scripts\verify\Test-EffectiveAccess.ps1
+.\scripts\verify\Test-StaticAcl.ps1
 ```
 
-## 5. Attach tools carefully
+These checks verify account presence, non-admin workers, protected ACL inheritance and expected/forbidden SID grants. They do not claim token-level effective access.
 
-Install your chosen coding/model tools separately. Run Builder and Reviewer with separate worker identities. Do not copy controller, GitHub, cloud or deployment credentials into worker profiles or environment variables.
+## 5. Prove worker access using real Windows tokens
 
-## 6. Prove effective isolation
+```powershell
+$builder = Get-Credential '.\AgentBuilder'
+$reviewer = Get-Credential '.\AgentReviewer'
+.\scripts\verify\Test-WorkerAccess.ps1 -BuilderCredential $builder -ReviewerCredential $reviewer
+```
 
-The baseline and static effective-access verifiers check expected users, non-admin worker status, protected zones, ACL inheritance and expected/forbidden worker grants. It is not a substitute for effective-access testing.
+The worker-access probe must show that Builder and Reviewer cannot read controller secrets, each worker can write its own workspace, and Reviewer cannot write Builder's workspace.
 
-Before real autonomy, prove on the target host that Builder and Reviewer cannot read or write controller-only zones, cannot inherit higher privilege through tool fallback, and cannot reuse stale leases or evidence.
+## 6. Attach tools carefully
 
-## 7. Start with local-only tasks
+Run real Builder and Reviewer adapters under separate worker identities. Do not copy controller, GitHub, cloud, Human Gate or deployment credentials into worker profiles or environments.
 
-Keep merge, deploy, release, permission changes, secret changes and any remote mutation behind an authenticated Human Gate. Expand capabilities only after negative tests pass.
+## 7. Keep external mutation gated
+
+The repository intentionally contains no real merge/deploy/release adapter. Before adding one, implement idempotency and reconciliation and call the protected-action authorization immediately before the side effect.
+
+Re-run the adversarial test suite after every change to runtime core, policy, identity, credentials or mutation capability.
