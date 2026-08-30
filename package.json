@@ -1,7 +1,7 @@
 {
     "name":  "bounded-agent-runtime",
     "version":  "0.3.0",
-    "description":  "Model-agnostic security runtime for AI coding agents with bounded authority, verified evidence, independent review and human gates",
+    "description":  "Model-agnostic security runtime for AI coding agents with bounded authority, verified evidence, separate review and human gates",
     "type":  "module",
     "private":  false,
     "license":  "Apache-2.0",
