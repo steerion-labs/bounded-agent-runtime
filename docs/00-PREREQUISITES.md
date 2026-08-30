@@ -1,31 +1,35 @@
 # 00 Prerequisites
 
-## Goal
+## Required
 
-Prepare a host for a bounded autonomous engineering runtime.
-
-## Recommended host
-
-- Windows 11 Pro or Enterprise for native account and ACL isolation
-- 16 GB RAM minimum, 32 GB+ recommended
+- Node.js 20+
 - Git
-- PowerShell 7 or Windows PowerShell
-- Node.js LTS or Python 3.11+
-- GitHub CLI or equivalent source-control CLI
-- Optional local model runtime such as Ollama
-- Optional Docker or WSL2 for stronger sandboxing
+- a local development repository when using real-agent tasks
 
-## Model/tool layer
+Run:
 
-The architecture is provider-neutral. You may use one or more coding agents or LLM CLIs, but none of them becomes an authority source.
+```powershell
+bar doctor
+bar agents
+```
 
-Examples:
+## Optional execution providers
 
-- local coding agent CLI
-- hosted coding model CLI
-- local inference runtime
-- deterministic test runners
+BAR is model/provider-neutral. Install only the agents you intend to use:
 
-## Before continuing
+- OpenAI Codex CLI
+- Claude Code
+- OpenCode
+- Ollama (Reviewer)
+- Docker Desktop / Docker Engine for the disposable container adapter
+- your own executable through the Generic adapter
 
-Use a dedicated non-production machine or isolated development environment first. Do not start with customer data, production credentials or automatic deployment authority.
+External agent authentication remains outside task files and outside BAR Evidence.
+
+## Windows protected-mode host
+
+Windows 11 Pro/Enterprise is recommended for the included role-account/ACL hardening scripts. PowerShell is required for those scripts.
+
+The Windows scripts prepare/test access boundaries; same-token local CLI child processes are still not treated as isolated workers. Protected runtime execution currently requires the Docker container adapter for Builder/Reviewer.
+
+Start on a dedicated development machine or isolated environment. Do not begin with production credentials, customer data or automatic mutation authority.

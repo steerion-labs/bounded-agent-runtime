@@ -16,7 +16,7 @@ $controllerSid = Get-Sid $ControllerName
 $builderSid = Get-Sid $BuilderName
 $reviewerSid = Get-Sid $ReviewerName
 $forbiddenBroad = @('S-1-1-0','S-1-5-11','S-1-5-32-545')
-$protected = 'runtime-core','runtime-state','secrets','journal'
+$protected = 'runtime-core','runtime-state','secrets','verification-work','journal'
 foreach ($zone in $protected) {
     $p = Join-Path $Root $zone
     if (-not (Test-Path $p)) { $failures.Add("Missing protected zone: $zone"); continue }
