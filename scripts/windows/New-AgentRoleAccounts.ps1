@@ -23,10 +23,11 @@ function Ensure-RoleUser {
 Ensure-RoleUser $ControllerName $ControllerPassword
 Ensure-RoleUser $BuilderName $BuilderPassword
 Ensure-RoleUser $ReviewerName $ReviewerPassword
+$adminGroup = Get-LocalGroup -SID ([Security.Principal.SecurityIdentifier]'S-1-5-32-544') -ErrorAction Stop
+$adminSids = @(Get-LocalGroupMember -Group $adminGroup.Name -ErrorAction Stop | ForEach-Object { $_.SID.Value })
 foreach ($name in @($ControllerName,$BuilderName,$ReviewerName)) {
-    $adminMember = Get-LocalGroupMember -Group 'Administrators' -ErrorAction Stop |
-        Where-Object { $_.Name -match "\\$([regex]::Escape($name))$" }
-    if ($adminMember) { throw "$name must not be an Administrator during runtime." }
+    $sid = (Get-LocalUser -Name $name -ErrorAction Stop).SID.Value
+    if ($sid -in $adminSids) { throw "$name must not be an Administrator during runtime." }
 }
 Write-Host 'ROLE_ACCOUNTS_PASS'
 Write-Host 'Passwords are operator-supplied, never printed, and never written by this script.'
