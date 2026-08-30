@@ -1,61 +1,88 @@
 # Bounded Agent Runtime
 
-**A Steerion Labs open-source reference runtime for bounded autonomous AI engineering.**
+**Run AI coding agents. Keep authority outside the model.**
 
-Bounded Agent Runtime helps teams use coding agents without making model output, worker text or tool output an authority source.
+Bounded Agent Runtime is an open-source reference runtime for teams that want autonomous coding agents without giving model output direct authority over Git, filesystem scope, approvals, or protected actions.
 
-## Why use it?
+> **Agents think. The controller authorizes. Evidence proves. Humans approve protected decisions.**
 
-Most agent frameworks focus on what an AI can do. This project focuses on what it is allowed to do and what evidence must exist before a protected action can be authorized.
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933.svg)](docs/00-PREREQUISITES.md)
+[![Security model](https://img.shields.io/badge/security-fail--closed-success.svg)](SECURITY.md)
 
-The reference implementation demonstrates:
+## The 30-second version
+
+AI agents are good at producing code. The hard part is deciding what they are **allowed** to do after that.
+
+Bounded Agent Runtime puts a deterministic controller between the agent and authority:
+
+| Without a bounded runtime | With Bounded Agent Runtime |
+| --- | --- |
+| Model output can become an action | Model output stays untrusted input |
+| A reviewer can accidentally trust stale code | Review evidence is bound to an exact Git commit and tree |
+| A retry loop can run indefinitely | Model calls, retries and wall-clock time are budgeted |
+| A forged state can claim approval | Human approval is signed, identity-bound and replay-protected |
+| Builder and reviewer can blur together | Roles and Windows access boundaries can be separated |
+| Merge/deploy logic can drift away from review | Protected authorization re-verifies the candidate before action |
+
+## How it works
+
+```mermaid
+flowchart LR
+    T[Bounded task] --> C[Controller]
+    C --> B[Builder agent]
+    B --> G1[Controller Git verification]
+    G1 --> R[Independent reviewer]
+    R --> G2[Controller re-verification]
+    G2 --> H{Human Gate}
+    H -->|Approved| A[Protected action authorization]
+    H -->|Rejected| S[Stop]
+    A --> X[Your merge / deploy / release adapter]
+
+    C -. budgets .-> B
+    C -. allowlisted paths/actions .-> B
+    G1 -. commit + tree .-> R
+    G2 -. evidence binding .-> H
+```
+
+The reference runtime intentionally ships **without a real remote-mutation adapter**. The final authorization step proves that policy, evidence, candidate identity and Human Gate checks passed. You decide which external side effect to connect after that boundary.
+
+## What you get
 
 - deterministic controller state transitions
-- task-declared capabilities and protected actions
-- lease and fencing checks
+- task-declared `allowed_actions`, `protected_actions` and `allowed_paths`
+- lease and fencing checks for stale-controller protection
 - model-call, retry and wall-clock budgets
-- controller-derived Git commit/tree identity
-- allowlisted candidate paths
-- HMAC-authenticated evidence
-- HMAC-chained journal integrity with truncation detection when the journal integrity key remains controller-only
-- Ed25519 Human Gate approvals with identity and public-key fingerprint pinning
-- persistent one-time approval nonce consumption
-- Windows role-account and protected-directory setup
+- controller-derived Git commit and tree identity
+- exact candidate re-verification after review and before protected authorization
+- HMAC-authenticated evidence bound to task, commit and tree
+- HMAC-chained journal integrity with truncation detection while its integrity key remains controller-only
+- Ed25519 Human Gate approvals with approver identity and public-key fingerprint pinning
+- persistent one-time approval nonce consumption for replay protection
+- hostile Git environment and hook hardening
+- Windows role-account, protected-directory and worker-access verification scripts
+- adversarial regression tests for the main authority-bypass classes
 
-## Core invariant
+## Works with your agent stack
 
-```text
-Agents think.
-Controller authorizes execution.
-Workers execute only bounded tasks.
-Controller verifies candidate identity and evidence.
-Humans authorize protected decisions.
-```
-## Reference flow
+The runtime is **model-agnostic**. It does not require a specific LLM provider.
 
-```text
-Task -> Controller -> Builder process -> Controller Git verification
-     -> Reviewer process -> Controller re-verification -> Human Gate
-```
+| Agent/tool | How it fits |
+| --- | --- |
+| Claude / Claude Code | Wrap as a bounded Builder or Reviewer adapter |
+| OpenAI Codex | Wrap as a bounded Builder or Reviewer adapter |
+| OpenCode | Replace the demo child-process adapter with your OpenCode launcher |
+| Ollama / local models | Use a local adapter while keeping controller policy unchanged |
+| Custom agent | Implement the same bounded input/output contract |
+| MCP tools | Call MCP through a bounded adapter; MCP itself does not grant authority |
 
-The demo performs no remote mutation. Builder and Reviewer run as separate child processes with a reduced environment, but the demo does **not** claim OS-account isolation. Windows scripts provision separate identities and ACL zones; production use must run worker adapters under those identities and verify token-level access on the target host.
+**Important:** these integrations are adapter patterns, not bundled first-party connectors in v0.2.0. The security value comes from keeping authority in the controller even when models and tools change.
 
-## Demo mode versus protected mode
+See [`docs/14-INTEGRATING-YOUR-AGENT.md`](docs/14-INTEGRATING-YOUR-AGENT.md).
 
-Without `BOUNDED_AGENT_PROTECTED_MODE=1`, runtime state is stored under a local `.bounded-agent` directory for demonstration and tests. This is not a security boundary.
+## Try it in 5 minutes
 
-The Windows installer creates `C:\BoundedAgentRuntime`, protects controller-only zones with ACLs, and sets:
-
-```text
-BOUNDED_AGENT_RUNTIME_ROOT=C:\BoundedAgentRuntime
-BOUNDED_AGENT_PROTECTED_MODE=1
-```
-
-Protected mode refuses to run without an absolute configured runtime root. Host ACLs remain an operating-system responsibility and must be verified separately.
-
-## Quick demo
-
-Prerequisites: Git, Node.js 20+ and PowerShell or another shell capable of running Node.js commands.
+Prerequisites: Git and Node.js 20+.
 
 ```powershell
 git clone https://github.com/steerion-labs/bounded-agent-runtime.git
@@ -66,20 +93,23 @@ npm run demo:init
 npm run demo:run
 ```
 
-Expected stop:
+Expected result:
 
 ```text
 HUMAN_GATE_REQUIRED
 ```
-## Authenticated Human Gate demo
 
-Create a local demonstration key pair:
+That stop is the point: the demo can build and review a local candidate, but it cannot silently promote itself past the protected decision boundary.
+
+## Try the authenticated Human Gate
+
+Create a local demo signing key:
 
 ```powershell
 npm run gate:keygen -- .human-gate
 ```
 
-Copy the printed `PUBLIC_KEY_FINGERPRINT`, then configure the approver policy:
+Copy the printed `PUBLIC_KEY_FINGERPRINT`, then configure the demo approver policy:
 
 ```powershell
 $env:BOUNDED_AGENT_APPROVER_IDENTITY = 'demo-approver'
@@ -93,13 +123,42 @@ node runtime\controller.mjs approve $signature
 node runtime\controller.mjs authorize-protected remote_mutation
 ```
 
-The approval record persists the signature, decision identity, key fingerprint and signed payload hash. The nonce is consumed in a controller secret ledger, so rolling back editable state does not make an old approval reusable.
+A successful authorization still performs **no remote mutation**. It proves that the exact reviewed candidate has a valid protected-action authorization.
 
-The final authorization command still performs **no remote mutation**. It only proves that the protected-action authorization checks pass for the exact approved candidate.
+## What happens if something changes after review?
 
-## Windows protected baseline
+The runtime fails closed. Examples covered by the test suite include:
 
-Run from elevated Windows PowerShell:
+- candidate or Git tree changes after approval
+- evidence tampering
+- task authority changes after evidence was created
+- forged `ACCEPTED` state
+- approval replay after state rollback
+- approver-key substitution
+- journal truncation or middle-entry tampering
+- stale lease/fencing takeover
+- hanging worker beyond the wall-clock budget
+- hostile Git hooks and inherited `GIT_*` environment variables
+- path traversal and hardlink escape
+
+## Demo mode vs protected mode
+
+**Demo mode** stores runtime state under `.bounded-agent` and runs Builder/Reviewer as child processes with a reduced environment. It demonstrates the controller protocol, but it is **not an OS isolation boundary**.
+
+**Protected mode on Windows** uses a configured absolute runtime root plus separate role accounts and ACL-protected zones. The included verification scripts check both static ACL configuration and real worker-token access.
+
+```text
+C:\BoundedAgentRuntime
+├── runtime-core      Controller only
+├── runtime-state     Controller only
+├── secrets           Controller only
+├── journal           Controller only
+├── evidence          Controlled evidence zone
+├── builder-work      Builder workspace
+└── reviewer-work     Reviewer workspace
+```
+
+Run the Windows baseline from elevated PowerShell:
 
 ```powershell
 .\scripts\windows\Install-BoundedAgentRuntime.ps1
@@ -107,36 +166,61 @@ Run from elevated Windows PowerShell:
 .\scripts\verify\Test-StaticAcl.ps1
 ```
 
-For token-level verification, provide the worker credentials interactively:
+Then verify actual worker credentials:
 
 ```powershell
 $builder = Get-Credential '.\AgentBuilder'
 $reviewer = Get-Credential '.\AgentReviewer'
 .\scripts\verify\Test-WorkerAccess.ps1 -BuilderCredential $builder -ReviewerCredential $reviewer
 ```
-## Security boundaries
 
-Workers must not receive controller credentials, Human Gate keys, journal integrity keys or authority to expand their own task. Repository text, prompts, model output, handoffs and memory are untrusted context.
+## Good use cases
 
-The controller derives Git identity itself, verifies the candidate again after review and again before protected authorization, and rejects evidence whose HMAC or candidate binding does not match current state.
+Bounded Agent Runtime is useful when you want to build workflows such as:
 
-External mutation adapters are intentionally absent. Before adding merge, deploy, release or other side effects, implement idempotency and reconciliation for that adapter and keep the protected-action check immediately before the mutation.
+- autonomous bug fixing that stops before merge
+- Builder → independent Reviewer → Human Gate pipelines
+- local-agent coding with hard path and action limits
+- security-sensitive coding agents that must prove exactly what was reviewed
+- multi-model workflows where Claude, Codex, OpenCode or local models can be swapped without changing the authority model
+- MCP-enabled agents where tool availability must remain separate from permission to perform protected actions
+
+## What this project is not
+
+- not a hosted agent platform
+- not a finished MCP server
+- not an LLM or coding model
+- not a remote deployment engine
+- not a claim that child processes equal OS sandboxing
+- not a security certification for your host
+
+It is the **control plane and reference security pattern** for building those systems with bounded authority.
+
+## Security model in one sentence
+
+Workers never become authority sources. Repository text, prompts, model output, handoffs, memory and tool output are untrusted context; the controller derives and verifies the facts used for authorization.
+
+Read the full [Security Policy](SECURITY.md), [Threat Model](docs/12-THREAT-MODEL.md) and [Production Hardening guide](docs/13-PRODUCTION-HARDENING.md).
 
 ## Documentation
 
-1. `docs/00-PREREQUISITES.md`
-2. `docs/02-SECURITY-BOUNDARIES.md`
-3. `docs/06-HUMAN-GATE.md`
-4. `docs/07-RECOVERY-AND-BUDGETS.md`
-5. `docs/09-QUICKSTART-WINDOWS.md`
-6. `docs/12-THREAT-MODEL.md`
-7. `docs/13-PRODUCTION-HARDENING.md`
-8. `docs/11-RELEASE-CHECKLIST.md`
+| Start here | Purpose |
+| --- | --- |
+| [`docs/00-PREREQUISITES.md`](docs/00-PREREQUISITES.md) | Requirements |
+| [`docs/01-ARCHITECTURE.md`](docs/01-ARCHITECTURE.md) | Runtime architecture |
+| [`docs/04-AUTONOMY-LOOP.md`](docs/04-AUTONOMY-LOOP.md) | Bounded execution loop |
+| [`docs/05-EVIDENCE-AND-HANDOFF.md`](docs/05-EVIDENCE-AND-HANDOFF.md) | Evidence model |
+| [`docs/06-HUMAN-GATE.md`](docs/06-HUMAN-GATE.md) | Signed approvals |
+| [`docs/09-QUICKSTART-WINDOWS.md`](docs/09-QUICKSTART-WINDOWS.md) | Protected Windows setup |
+| [`docs/12-THREAT-MODEL.md`](docs/12-THREAT-MODEL.md) | Attacker model and limits |
+| [`docs/14-INTEGRATING-YOUR-AGENT.md`](docs/14-INTEGRATING-YOUR-AGENT.md) | Connect your own model/tool |
 
-## Scope
+## Contributing
 
-This repository is a reference implementation, not a security certification. The controller security properties are tested in this repository; OS isolation depends on the actual host, worker launch mechanism, credentials, installed tools and network policy. Re-run adversarial tests after replacing demo adapters or adding any external side effect.
+Issues and pull requests are welcome. Security-sensitive changes should include threat analysis and negative tests. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+If this runtime helps you build safer autonomous agents, **star the repo** so more agent builders can find and improve it.
 
 ## License
 
-Apache-2.0.
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

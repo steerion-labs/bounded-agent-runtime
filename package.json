@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": false,
   "type": "module",
-  "description": "Reference runtime for bounded autonomous AI engineering workflows",
+  "description": "Model-agnostic reference runtime for AI coding agents with bounded authority, verified evidence and human gates",
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "demo:reset": "node runtime/controller.mjs reset",
@@ -13,6 +13,8 @@
     "gate:keygen": "node runtime/gate.mjs keygen",
     "gate:sign": "node runtime/gate.mjs sign"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "license": "Apache-2.0"
 }
