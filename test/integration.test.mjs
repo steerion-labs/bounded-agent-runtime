@@ -55,6 +55,20 @@ test('approval nonce cannot be replayed after state rollback',()=>{
   assert.notEqual(replay.status,0); assert.match(replay.stderr,/HUMAN_GATE_NONCE_REPLAY|APPROVAL_NOT_ALLOWED_IN:ACCEPTED/);
 });
 
+test('approval succeeds for task whose only protected action is merge',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-approve-merge-only-')); const keys=setupKeys(cwd);
+  const mergeOnly=JSON.parse(fs.readFileSync(task,'utf8'));
+  mergeOnly.allowed_actions=mergeOnly.allowed_actions.filter(x=>x!=='remote_mutation');
+  mergeOnly.protected_actions=['merge'];
+  const localTask=path.join(cwd,'task.json'); fs.writeFileSync(localTask,JSON.stringify(mergeOnly,null,2));
+  assert.equal(run(['init',localTask],cwd,keys.env).status,0); assert.equal(run(['run'],cwd,keys.env).status,0);
+  const signed=spawnSync(process.execPath,[gate,'sign',path.join(keys.keyDir,'private.pem')],{cwd,encoding:'utf8',env:keys.env});
+  assert.equal(signed.status,0,signed.stderr);
+  const approved=run(['approve',signed.stdout.trim()],cwd,keys.env);
+  assert.equal(approved.status,0,approved.stderr); assert.match(approved.stdout,/ACCEPTED_NO_REMOTE_MUTATION_EXECUTED/);
+  const auth=run(['authorize-protected','merge'],cwd,keys.env); assert.equal(auth.status,0,auth.stderr); assert.match(auth.stdout,/PROTECTED_ACTION_AUTHORIZED merge/);
+});
+
 test('approval key substitution fails fingerprint pinning',()=>{
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-keysub-')); const keys=setupKeys(cwd);
   assert.equal(run(['init',task],cwd,keys.env).status,0); assert.equal(run(['run'],cwd,keys.env).status,0);

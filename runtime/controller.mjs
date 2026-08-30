@@ -107,7 +107,7 @@ function approve(signature) {
   }, state, 'human', 'CRYPTOGRAPHICALLY_VERIFIED');
   verifyEvidence(approvalEvidence, state);
   transition(state, 'ACCEPTED', approvalEvidence);
-  assertHumanApproval(state, 'remote_mutation');
+  for (const action of state.task.protected_actions) assertHumanApproval(state, action);
   console.log('ACCEPTED_NO_REMOTE_MUTATION_EXECUTED');
 }
 function recover() { const state = loadState(); console.log(recoverState(state)); }
