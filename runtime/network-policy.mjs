@@ -4,9 +4,12 @@ import dns from 'node:dns/promises';
 
 const POLICY_KEYS = new Set(['version','allowed_hosts','allowed_ports','methods','timeout_ms','max_response_bytes','max_request_bytes','follow_redirects','secret_headers']);
 const SAFE_METHODS = new Set(['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS']);
+const FORBIDDEN_SECRET_HEADERS = new Set(['host','content-length','connection','proxy-connection','keep-alive','transfer-encoding','upgrade','te','trailer','proxy-authorization','proxy-authenticate']);
 function validHostPattern(value) {
   if (typeof value !== 'string' || !value || value.length > 253) return false;
-  const base = value.startsWith('*.') ? value.slice(2) : value;
+  const wildcard = value.startsWith('*.');
+  const base = wildcard ? value.slice(2) : value;
+  if (wildcard && base.split('.').length < 2) return false;
   if (value.includes('*') && !value.startsWith('*.')) return false;
   if (net.isIP(base)) return !value.startsWith('*.');
   return /^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(base);
@@ -30,7 +33,7 @@ export function validateNetworkPolicy(input) {
   for (const [pattern, headers] of Object.entries(policy.secret_headers)) {
     if (!validHostPattern(pattern) || !policy.allowed_hosts.includes(pattern) || !headers || typeof headers !== 'object' || Array.isArray(headers)) throw new Error('NETWORK_POLICY_SECRET_HEADERS_INVALID');
     for (const [header, spec] of Object.entries(headers)) {
-      if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/.test(header) || !spec || typeof spec !== 'object' || Array.isArray(spec)) throw new Error('NETWORK_POLICY_SECRET_HEADER_INVALID');
+      if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/.test(header) || FORBIDDEN_SECRET_HEADERS.has(header.toLowerCase()) || !spec || typeof spec !== 'object' || Array.isArray(spec)) throw new Error('NETWORK_POLICY_SECRET_HEADER_INVALID');
       for (const key of Object.keys(spec)) if (!['secret','prefix','suffix'].includes(key)) throw new Error(`NETWORK_POLICY_SECRET_HEADER_UNKNOWN_FIELD:${key}`);
       if (typeof spec.secret !== 'string' || !/^[A-Za-z0-9_.-]{1,64}$/.test(spec.secret)) throw new Error('NETWORK_POLICY_SECRET_NAME_INVALID');
       if (spec.prefix !== undefined && (typeof spec.prefix !== 'string' || spec.prefix.length > 256)) throw new Error('NETWORK_POLICY_SECRET_PREFIX_INVALID');

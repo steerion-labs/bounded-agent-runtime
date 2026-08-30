@@ -61,6 +61,11 @@ export function acquireControllerLock({ staleMs = 30000 } = {}) {
   }
   throw new Error('CONTROLLER_LOCK_ACQUIRE_FAILED');
 }
+export function cleanupControllerHooks() {
+  if (!SAFE_HOOKS_DIR) return;
+  fs.rmSync(SAFE_HOOKS_DIR, { recursive: true, force: true });
+  SAFE_HOOKS_DIR = null;
+}
 export function releaseControllerLock(lock) {
   if (!lock) return;
   const owner = lockOwner();

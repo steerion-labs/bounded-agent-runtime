@@ -196,4 +196,7 @@ test('network policy rejects malformed limits and schema instead of failing open
   assert.throws(()=>validateNetworkPolicy({...base,allowed_hosts:['*example.com']}),/NETWORK_POLICY_HOSTS_INVALID/);
   assert.throws(()=>validateNetworkPolicy({...base,unexpected:true}),/NETWORK_POLICY_UNKNOWN_FIELD/);
   assert.throws(()=>validateNetworkPolicy({...base,secret_headers:{'evil.example.com':{Authorization:{secret:'x'}}}}),/NETWORK_POLICY_SECRET_HEADERS_INVALID/);
+  assert.throws(()=>validateNetworkPolicy({...base,allowed_hosts:['*.com']}),/NETWORK_POLICY_HOSTS_INVALID/);
+  assert.throws(()=>validateNetworkPolicy({...base,secret_headers:{'api.example.com':{Host:{secret:'x'}}}}),/NETWORK_POLICY_SECRET_HEADER_INVALID/);
+  assert.throws(()=>validateNetworkPolicy({...base,secret_headers:{'api.example.com':{'Content-Length':{secret:'x'}}}}),/NETWORK_POLICY_SECRET_HEADER_INVALID/);
 });

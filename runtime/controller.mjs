@@ -3,7 +3,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   STATE_FILE, BUILDER_DIR, REVIEWER_DIR, VERIFICATION_DIR, ensureRuntimeDir, assertProtectedRootConfigured,
-  loadState, saveState, journal, transition, newLease, assertCurrentLease, acquireControllerLock, releaseControllerLock, claimControllerLease, sha256,
+  loadState, saveState, journal, transition, newLease, assertCurrentLease, acquireControllerLock, releaseControllerLock, cleanupControllerHooks, claimControllerLease, sha256,
   validateTask, authorize, assertWorkerExecutionBoundary, assertVerificationExecutionBoundary, spendBudget, remainingWallClockMs, evidence, verifyEvidence, verifyStateEvidence,
   ensureGitRepo, seedLocalGitWorkspace, cloneReviewerWorkspace, cloneCandidateWorkspace, commitWorkspace, assertWorkspaceIdentity, assertWorkspaceScope, changedWorkspacePaths, gitExec,
   createGateChallenge, createHumanApproval, assertHumanApproval, recoverState,
@@ -169,7 +169,7 @@ function approve(signature) {
   for (const action of state.task.protected_actions) assertHumanApproval(state, action);
   console.log('ACCEPTED_NO_REMOTE_MUTATION_EXECUTED');
 }
-function recover() { const state = loadState(); const result = recoverState(state); claimControllerLease(state); console.log(result); }
+function recover() { const state = loadState(); const result = recoverState(state); console.log(result); }
 function authorizeProtected(action) { if (!action) throw new Error('PROTECTED_ACTION_REQUIRED'); const state = loadState(); recoverState(state); claimControllerLease(state); assertCurrentLease(state); if (state.workspace_path) assertWorkspaceIdentity(state, state.workspace_path); verifyStateEvidence(state); if (authorize(state.task, action) !== 'HUMAN_GATE') throw new Error('PROTECTED_ACTION_NOT_DECLARED:' + action); assertHumanApproval(state, action); console.log('PROTECTED_ACTION_AUTHORIZED ' + action); }
 function reset() { console.log(resetDemoRuntime()); }
 let controllerLock = null;
@@ -183,5 +183,8 @@ try {
   else if (command === 'reset') reset();
   else throw new Error('USAGE:init <task.json> | run | approve <signature> | authorize-protected <action> | recover | reset');
 } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
-finally { if (controllerLock) { try { releaseControllerLock(controllerLock); } catch (error) { fail(error instanceof Error ? error.message : String(error)); } } }
+finally {
+  try { cleanupControllerHooks(); } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
+  if (controllerLock) { try { releaseControllerLock(controllerLock); } catch (error) { fail(error instanceof Error ? error.message : String(error)); } }
+}
 

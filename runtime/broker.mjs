@@ -44,7 +44,7 @@ function publicHeaders(headers = {}) {
   const out = {};
   for (const [key, value] of Object.entries(headers)) {
     const lower = key.toLowerCase();
-    if (HOP_BY_HOP.has(lower) || ['authorization','cookie','proxy-authorization'].includes(lower)) continue;
+    if (HOP_BY_HOP.has(lower) || ['authorization','cookie','proxy-authorization','host','content-length'].includes(lower)) continue;
     out[key] = String(value);
   }
   return out;
