@@ -35,7 +35,7 @@ function prompt() {
     'Do not attempt to escape the container. Finish with a short summary.'
   ].join('\n');
   return [
-    'You are an independent Reviewer inside Bounded Agent Runtime.',
+    'You are the Reviewer inside Bounded Agent Runtime.',
     `Task: ${task.intent}`,
     `Candidate commit: ${candidate?.candidate_sha || 'unknown'}`,
     `Candidate tree: ${candidate?.tree_hash || 'unknown'}`,

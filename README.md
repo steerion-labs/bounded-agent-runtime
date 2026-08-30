@@ -31,8 +31,8 @@ flowchart LR
     T[Task + explicit authority] --> C[Controller]
     C --> B[Builder]
     B --> G[Controller Git identity]
-    G --> V[Independent verification]
-    V --> R[Independent reviewer]
+    G --> V[Controller-observed verification]
+    V --> R[Separate Reviewer]
     R --> E[Evidence re-check]
     E --> H{Authenticated Human Gate}
     H -->|approve| A[Protected action authorization]
@@ -57,7 +57,7 @@ The reference runtime intentionally performs **no real merge, deploy or release*
 - controller-derived Git candidate SHA + tree hash
 - task-bound HMAC evidence and authenticated append-only journal chain
 - controller-observed verification commands executed without a shell on a disposable candidate copy
-- independent Reviewer workspace with mutation detection
+- separate Reviewer execution workspace with mutation detection
 - Ed25519 Human Gate with pinned approver identity/fingerprint and replay-protected nonce consumption
 - read-only MCP bridge: status, evidence and doctor only
 - loopback-only read-only dashboard
@@ -204,7 +204,7 @@ C:\BoundedAgentRuntime
 ├── runtime-state      controller only
 ├── secrets            controller only
 ├── journal            controller only
-├── verification-work  independent verifier/reviewer + controller
+├── verification-work  controller only
 ├── evidence           controlled evidence zone
 ├── builder-work       builder workspace
 └── reviewer-work      reviewer workspace

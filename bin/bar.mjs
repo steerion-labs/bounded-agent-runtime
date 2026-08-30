@@ -20,6 +20,7 @@ function option(name, fallback = null) {
   return value;
 }
 function has(name) { return argv.includes(name); }
+function canonical(value) { if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']'; if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key)+':'+canonical(value[key])).join(',') + '}'; return JSON.stringify(value); }
 function options(name) { const values=[]; for(let i=0;i<argv.length;i+=1) if(argv[i]===name){ const value=argv[i+1]; if(value===undefined||value.startsWith('--')) throw new Error(`OPTION_VALUE_REQUIRED:${name}`); values.push(value); } return values; }
 function controller(args) {
   const result = spawnSync(process.execPath, [path.join(root, 'runtime', 'controller.mjs'), ...args], { stdio: 'inherit', env: process.env, windowsHide: true });
@@ -104,7 +105,7 @@ try {
   else if (command === 'doctor') { const report = doctorReport(); console.log(has('--json') ? JSON.stringify(report, null, 2) : formatDoctor(report)); if (report.status === 'FAIL') process.exitCode = 1; }
   else if (command === 'agents') { const agents = doctorReport().agents; console.log(has('--json') ? JSON.stringify(agents, null, 2) : Object.entries(agents).map(([n,a]) => `${a.installed ? 'OK' : '--'} ${n.padEnd(12)} ${a.roles.join('/')} ${a.executable || 'not found'}`).join('\n')); }
   else if (command === 'task') generateTask();
-  else if (command === 'run') { const task = option('--task'); if (!fs.existsSync(STATE_FILE)) { if (!task) throw new Error('TASK_FILE_REQUIRED'); controller(['init', path.resolve(task)]); } else if (task) { const requested=readJson(path.resolve(task)); const current=readJson(STATE_FILE); if(requested.task_id!==current.task_id) throw new Error(`RUNTIME_ALREADY_INITIALIZED_FOR:${current.task_id}:run bar reset before another task`); } controller(['run']); }
+  else if (command === 'run') { const task = option('--task'); if (!fs.existsSync(STATE_FILE)) { if (!task) throw new Error('TASK_FILE_REQUIRED'); controller(['init', path.resolve(task)]); } else if (task) { const requested=readJson(path.resolve(task)); const current=readJson(STATE_FILE); if(requested.task_id!==current.task_id) throw new Error(`RUNTIME_ALREADY_INITIALIZED_FOR:${current.task_id}:run bar reset before another task`); if(canonical(requested)!==canonical(current.task)) throw new Error('TASK_FILE_MISMATCH:the supplied task differs from persisted authority'); } controller(['run']); }
   else if (command === 'status') showStatus(has('--json'));
   else if (command === 'recover') controller(['recover']);
   else if (command === 'reset') controller(['reset']);

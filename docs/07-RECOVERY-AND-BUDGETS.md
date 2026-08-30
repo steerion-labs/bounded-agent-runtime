@@ -35,3 +35,9 @@ The reference task model enforces:
 - wall-clock deadline
 
 Worker adapter processes and controller Git commands receive finite timeouts derived from the remaining wall-clock budget. The runtime does not currently implement token-count or monetary budgets; adapters may add them as explicit task fields and controller checks.
+
+### Controller exclusivity
+
+Mutating controller commands acquire an atomic controller-owned lock under `runtime-core` before reading/mutating runtime state. A live owner blocks concurrent controllers. A dead owner can be taken over, after which the controller claims a fresh monotonic lease generation and fencing token.
+
+The lock serializes runtime state, journal, approval/nonce and protected-authorization mutations on one host. It is not a distributed lock; a multi-host deployment requires a durable compare-and-swap/lease service with equivalent fencing semantics.

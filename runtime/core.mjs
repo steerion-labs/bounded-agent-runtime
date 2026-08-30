@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { assertTransition } from './state-machine.mjs';
 
 export const RUNTIME_ROOT = path.resolve(process.env.BOUNDED_AGENT_RUNTIME_ROOT || '.bounded-agent');
+export const CORE_DIR = path.join(RUNTIME_ROOT, 'runtime-core');
 export const STATE_DIR = path.join(RUNTIME_ROOT, 'runtime-state');
 export const JOURNAL_DIR = path.join(RUNTIME_ROOT, 'journal');
 export const SECRETS_DIR = path.join(RUNTIME_ROOT, 'secrets');
@@ -17,11 +18,14 @@ export const JOURNAL_FILE = path.join(JOURNAL_DIR, 'journal.jsonl');
 const JOURNAL_KEY_FILE = path.join(SECRETS_DIR, 'journal-hmac.key');
 const JOURNAL_ANCHOR_FILE = path.join(SECRETS_DIR, 'journal-anchor.json');
 const NONCE_LEDGER_FILE = path.join(SECRETS_DIR, 'human-gate-nonces.json');
+const CONTROLLER_LOCK_DIR = path.join(CORE_DIR, 'controller-lock');
+const CONTROLLER_LOCK_OWNER = path.join(CONTROLLER_LOCK_DIR, 'owner.json');
+let SAFE_HOOKS_DIR = null;
 
 export const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 const hmac256 = (key, value) => crypto.createHmac('sha256', key).update(value).digest('hex');
 export function ensureRuntimeDir() {
-  for (const dir of [STATE_DIR, JOURNAL_DIR, SECRETS_DIR, EVIDENCE_DIR, BUILDER_DIR, REVIEWER_DIR, VERIFICATION_DIR]) fs.mkdirSync(dir, { recursive: true });
+  for (const dir of [CORE_DIR, STATE_DIR, JOURNAL_DIR, SECRETS_DIR, EVIDENCE_DIR, BUILDER_DIR, REVIEWER_DIR, VERIFICATION_DIR]) fs.mkdirSync(dir, { recursive: true });
 }
 export function assertProtectedRootConfigured() {
   if (process.env.BOUNDED_AGENT_PROTECTED_MODE !== '1') return 'DEMO_MODE';
@@ -30,6 +34,38 @@ export function assertProtectedRootConfigured() {
 }
 export function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+}
+function processAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error?.code === 'EPERM'; }
+}
+function lockOwner() {
+  try { return readJson(CONTROLLER_LOCK_OWNER); } catch { return null; }
+}
+export function acquireControllerLock({ staleMs = 30000 } = {}) {
+  fs.mkdirSync(CORE_DIR, { recursive: true });
+  const token = crypto.randomUUID();
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      fs.mkdirSync(CONTROLLER_LOCK_DIR);
+      fs.writeFileSync(CONTROLLER_LOCK_OWNER, JSON.stringify({ pid: process.pid, token, created_at: new Date().toISOString() }) + '\n', { flag: 'wx', mode: 0o600 });
+      return { pid: process.pid, token };
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      const owner = lockOwner(); let age = 0; try { age = Date.now() - fs.statSync(CONTROLLER_LOCK_DIR).mtimeMs; } catch {}
+      if ((owner?.pid && processAlive(owner.pid)) || (!owner && age < staleMs)) throw new Error(`CONTROLLER_LOCKED:${owner?.pid ?? 'unknown'}`);
+      const tomb = `${CONTROLLER_LOCK_DIR}.stale.${crypto.randomUUID()}`;
+      try { fs.renameSync(CONTROLLER_LOCK_DIR, tomb); fs.rmSync(tomb, { recursive: true, force: true }); } catch { if (attempt === 3) throw new Error('CONTROLLER_LOCK_TAKEOVER_FAILED'); }
+    }
+  }
+  throw new Error('CONTROLLER_LOCK_ACQUIRE_FAILED');
+}
+export function releaseControllerLock(lock) {
+  if (!lock) return;
+  const owner = lockOwner();
+  if (!owner || owner.pid !== lock.pid || owner.token !== lock.token) throw new Error('CONTROLLER_LOCK_OWNERSHIP_LOST');
+  fs.rmSync(CONTROLLER_LOCK_DIR, { recursive: true, force: false });
 }
 function writeAtomic(file, text, mode = 0o600) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -143,6 +179,14 @@ export function assertCurrentLease(localState) {
   if (persisted.lease.generation !== localState.lease.generation) throw new Error('STALE_CONTROLLER_GENERATION');
   if (persisted.lease.fencing_token !== localState.lease.fencing_token) throw new Error('STALE_CONTROLLER_FENCE');
 }
+export function claimControllerLease(state) {
+  const prior = Number.isSafeInteger(state.lease?.generation) ? state.lease.generation : 0;
+  const wallMs = Number.isFinite(state.budget?.limits?.wall_clock_seconds) ? state.budget.limits.wall_clock_seconds * 1000 : 0;
+  state.lease = newLease(state.task_id, Math.max(300000, wallMs + 60000), prior + 1);
+  saveState(state);
+  journal('LEASE_ACQUIRED', { task_id: state.task_id, generation: state.lease.generation, owner: state.lease.owner, expires_at: state.lease.expires_at });
+  return state.lease;
+}
 export function assertBudget(state, delta = {}) {
   const wall = state.budget?.limits?.wall_clock_seconds;
   if (state.started_at && Number.isFinite(wall) && Date.now() - Date.parse(state.started_at) > wall * 1000) throw new Error('BUDGET_EXCEEDED:wall_clock_seconds');
@@ -253,8 +297,15 @@ function safeGitEnv(extra = {}) {
   return { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null', GIT_TERMINAL_PROMPT: '0', ...extra };
 }
 
+function controllerHooksPath() {
+  if (!SAFE_HOOKS_DIR) {
+    fs.mkdirSync(CORE_DIR, { recursive: true });
+    SAFE_HOOKS_DIR = fs.mkdtempSync(path.join(CORE_DIR, 'disabled-hooks-'));
+  }
+  return SAFE_HOOKS_DIR;
+}
 export function gitExec(repo, args, { timeout = 10000, stdio = ['ignore','pipe','pipe'], trim = true } = {}) {
-  const hookPath = path.join(repo, '.disabled-hooks');
+  const hookPath = controllerHooksPath();
   const output = execFileSync('git', ['-c', `core.hooksPath=${hookPath}`, '-c', 'protocol.file.allow=never', '-C', repo, ...args],
     { encoding: 'utf8', timeout, env: safeGitEnv(), stdio });
   if (output == null) return '';

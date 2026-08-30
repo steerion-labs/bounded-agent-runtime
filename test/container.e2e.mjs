@@ -16,7 +16,7 @@ function sourceRepo(){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'bar-contai
 function taskFor(source, reviewer='demo'){
   return {schema_version:1,task_id:`container-${Date.now()}`,intent:'Change src/value.txt',source:{kind:'local_git',path:source,ref:execFileSync('git',['rev-parse','HEAD'],{cwd:source,encoding:'utf8'}).trim()},workers:{builder:{adapter:'container',image:nodeImage,command:'node',args:['-e',"require('fs').writeFileSync('/workspace/src/value.txt','after\\n');console.log('changed')"]},reviewer:reviewer==='demo'?{adapter:'demo'}:{adapter:'container',image:nodeImage,command:'node',args:['-e',"require('fs').writeFileSync('/workspace/src/reviewer-write.txt','container-only');console.log(JSON.stringify({decision:'APPROVE',reason:'disposable-copy-check',residual_risks:[]}))"]}},allowed_actions:['build_local','merge'],protected_actions:['merge'],allowed_paths:['src'],budget:{model_calls:4,wall_clock_seconds:90,retries:0}};
 }
-test('container Builder runs with network none and reaches independent review',()=>{
+test('container Builder runs with network none and reaches separate review',()=>{
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-container-flow-')); const source=sourceRepo(); const spec=taskFor(source);
   const file=path.join(cwd,'task.json');fs.writeFileSync(file,JSON.stringify(spec,null,2));
   assert.equal(run(['init',file],cwd).status,0);const result=run(['run'],cwd);assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/HUMAN_GATE_REQUIRED/);

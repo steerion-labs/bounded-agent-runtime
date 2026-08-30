@@ -31,6 +31,6 @@ Typical automatic scope:
 - retry bounded transient failures
 - collect exact-candidate evidence
 - prepare a structured handoff
-- launch an independent review
+- launch a separate review execution
 
 Protected operations stop at Human Gate.

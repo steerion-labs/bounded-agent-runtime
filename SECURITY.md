@@ -39,3 +39,9 @@ Any new adapter, tool fallback, policy expansion, network route, secret path or 
 ## Response expectations
 
 BAR is community open source and provides no contractual SLA. Maintainers should acknowledge valid private reports as soon as practical and publish remediation notes after affected code is fixed.
+
+## Reviewer separation versus independence
+
+BAR verifies that review runs against an exact candidate in a separate workspace and records the configured Reviewer adapter hash in Evidence. The Evidence claim is `review_observation`, not a proof of organizational or model independence.
+
+If your policy requires independent review, configure and attest the required separation outside the model itself, for example distinct credentials, provider/model, container image, operator or trust domain. BAR must not infer independence merely because the Reviewer ran in a second process.

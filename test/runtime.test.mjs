@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import {
   newLease, assertFreshLease, assertBudget, authorize, assertAllowedPath,
   createGateChallenge, canonicalGatePayload, verifyGateSignature, validateTask,
@@ -11,7 +12,7 @@ import {
 } from '../runtime/core.mjs';
 import { assertTransition } from '../runtime/state-machine.mjs';
 import { assertAdapterName } from '../runtime/adapters/registry.mjs';
-import { hostMatches, isPrivateAddress, checkNetworkTarget, assertNetworkMethod } from '../runtime/network-policy.mjs';
+import { hostMatches, isPrivateAddress, checkNetworkTarget, assertNetworkMethod, validateNetworkPolicy } from '../runtime/network-policy.mjs';
 import { handleMcpRequest } from '../runtime/mcp-server.mjs';
 import { createDashboardServer } from '../runtime/dashboard.mjs';
 import { doctorReport } from '../runtime/doctor.mjs';
@@ -175,4 +176,24 @@ test('protected mode denies local controller verification commands', () => {
   assert.throws(()=>assertVerificationExecutionBoundary(1,true),/PROTECTED_MODE_LOCAL_VERIFIER_DENIED/);
   assert.doesNotThrow(()=>assertVerificationExecutionBoundary(0,true));
   assert.doesNotThrow(()=>assertVerificationExecutionBoundary(1,false));
+});
+
+
+test('repository-controlled disabled-hooks cannot execute under controller Git', () => {
+  const repo=fs.mkdtempSync(path.join(os.tmpdir(),'bar-repo-hook-')); const markers=[];
+  ensureGitRepo(repo); fs.mkdirSync(path.join(repo,'.disabled-hooks'),{recursive:true}); fs.mkdirSync(path.join(repo,'demo-output'),{recursive:true});
+  for (const name of ['pre-commit','prepare-commit-msg','commit-msg','post-commit']) { const marker=path.join(repo,'..',`repo-hook-${name}.txt`); markers.push(marker); const hook=path.join(repo,'.disabled-hooks',name); fs.writeFileSync(hook,`#!/bin/sh\necho pwned > \"${marker.replace(/\\/g,'/')}\"\n`); try{fs.chmodSync(hook,0o755)}catch{} }
+  fs.writeFileSync(path.join(repo,'demo-output','base.txt'),'base\n'); execFileSync('git',['add','.'],{cwd:repo}); execFileSync('git',['commit','-q','-m','base'],{cwd:repo});
+  fs.writeFileSync(path.join(repo,'demo-output','base.txt'),'changed\n'); commitWorkspace(repo,{allowed_paths:['demo-output']},'candidate');
+  for (const marker of markers) assert.equal(fs.existsSync(marker),false,'repository-controlled hook executed with controller authority');
+});
+
+
+test('network policy rejects malformed limits and schema instead of failing open', () => {
+  const base={version:1,allowed_hosts:['api.example.com']};
+  assert.throws(()=>validateNetworkPolicy({...base,max_response_bytes:'unlimited'}),/NETWORK_POLICY_RESPONSE_LIMIT_INVALID/);
+  assert.throws(()=>validateNetworkPolicy({...base,timeout_ms:0}),/NETWORK_POLICY_TIMEOUT_INVALID/);
+  assert.throws(()=>validateNetworkPolicy({...base,allowed_hosts:['*example.com']}),/NETWORK_POLICY_HOSTS_INVALID/);
+  assert.throws(()=>validateNetworkPolicy({...base,unexpected:true}),/NETWORK_POLICY_UNKNOWN_FIELD/);
+  assert.throws(()=>validateNetworkPolicy({...base,secret_headers:{'evil.example.com':{Authorization:{secret:'x'}}}}),/NETWORK_POLICY_SECRET_HEADERS_INVALID/);
 });

@@ -13,7 +13,7 @@ Use one active engineering task at a time. Queue additional tasks durably instea
 5. Builder completes the allowed change and approved checks.
 6. Verifier binds test evidence to the exact candidate/tree.
 7. Controller validates the handoff and evidence.
-8. Independent Reviewer inspects the same exact candidate.
+8. Separate Reviewer execution inspects the same exact candidate.
 9. Controller evaluates review and policy.
 10. Protected transitions stop at Human Gate.
 11. Controller alone performs an approved remote mutation.

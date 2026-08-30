@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync, execFileSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 
 const repo=path.resolve(import.meta.dirname,'..');
 const controller=path.join(repo,'runtime','controller.mjs');
@@ -205,7 +205,7 @@ function realTask(source,builder='generic',reviewer='demo') {
   return {schema_version:1,task_id:`real-${Date.now()}-${Math.random()}`,intent:'Change src/value.txt',source:{kind:'local_git',path:source,ref:execFileSync('git',['rev-parse','HEAD'],{cwd:source,encoding:'utf8'}).trim()},workers:{builder:{adapter:builder},reviewer:{adapter:reviewer}},allowed_actions:['build_local','merge'],protected_actions:['merge'],allowed_paths:['src'],budget:{model_calls:4,wall_clock_seconds:60,retries:0}};
 }
 
-test('seeded local Git workspace runs bounded generic Builder through independent demo review',()=>{
+test('seeded local Git workspace runs bounded generic Builder through separate demo review',()=>{
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-real-flow-')); const source=makeSourceRepo();
   const worker=path.join(cwd,'worker.mjs'); fs.writeFileSync(worker,"import fs from 'node:fs';fs.writeFileSync('src/value.txt','after\\n');console.log('changed');\n");
   const localTask=path.join(cwd,'task.json'); const spec=realTask(source); fs.writeFileSync(localTask,JSON.stringify(spec,null,2));
@@ -218,7 +218,7 @@ test('seeded local Git workspace runs bounded generic Builder through independen
 test('reviewer mutation is rejected even when reviewer returns APPROVE',()=>{
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-review-mutate-')); const source=makeSourceRepo();
   const worker=path.join(cwd,'worker.mjs');
-  fs.writeFileSync(worker,"import fs from 'node:fs';const p=process.argv.at(-1)||'';if(p.includes('independent Reviewer')){fs.writeFileSync('src/review.txt','mutated\\n');console.log(JSON.stringify({decision:'APPROVE',reason:'looks good',residual_risks:[]}));}else{fs.writeFileSync('src/value.txt','after\\n');console.log('changed');}\n");
+  fs.writeFileSync(worker,"import fs from 'node:fs';const p=process.argv.at(-1)||'';if(p.includes('You are the Reviewer')){fs.writeFileSync('src/review.txt','mutated\\n');console.log(JSON.stringify({decision:'APPROVE',reason:'looks good',residual_risks:[]}));}else{fs.writeFileSync('src/value.txt','after\\n');console.log('changed');}\n");
   const localTask=path.join(cwd,'task.json'); const spec=realTask(source,'generic','generic'); fs.writeFileSync(localTask,JSON.stringify(spec,null,2));
   const env=baseEnv(cwd,{BOUNDED_AGENT_GENERIC_EXECUTABLE:process.execPath,BOUNDED_AGENT_GENERIC_ARGS_JSON:JSON.stringify([worker])});
   assert.equal(run(['init',localTask],cwd,env).status,0); const result=run(['run'],cwd,env);
@@ -244,7 +244,7 @@ test('failed controller-observed verification blocks before review and Human Gat
   const env=baseEnv(cwd,{BOUNDED_AGENT_GENERIC_EXECUTABLE:process.execPath,BOUNDED_AGENT_GENERIC_ARGS_JSON:JSON.stringify([worker])});
   assert.equal(run(['init',localTask],cwd,env).status,0); const result=run(['run'],cwd,env);
   assert.notEqual(result.status,0); assert.match(result.stderr,/VERIFICATION_FAILED/);
-  const state=JSON.parse(fs.readFileSync(stateFor(cwd),'utf8')); assert.equal(state.state,'TESTING'); assert.equal(state.evidence.some(x=>x.claim==='independent_review'),false);
+  const state=JSON.parse(fs.readFileSync(stateFor(cwd),'utf8')); assert.equal(state.state,'TESTING'); assert.equal(state.evidence.some(x=>x.claim==='review_observation'),false);
 });
 
 test('protected authorization rejects uncommitted worktree drift after approval',()=>{
@@ -264,4 +264,17 @@ test('protected mode refuses local child-process agent adapters',()=>{
   assert.equal(run(['init',task],cwd,env).status,0);
   const result=run(['run'],cwd,env);
   assert.notEqual(result.status,0); assert.match(result.stderr,/PROTECTED_MODE_REQUIRES_ISOLATED_WORKER:builder:demo/);
+});
+
+
+test('controller lock serializes concurrent controllers and allows dead-owner takeover', async()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-lock-')), env=baseEnv(cwd);
+  assert.equal(run(['init',task],cwd,env).status,0);
+  const coreUrl=new URL('../runtime/core.mjs',import.meta.url).href;
+  const code=`import {acquireControllerLock} from ${JSON.stringify(coreUrl)}; acquireControllerLock(); console.log('LOCK_HELD'); setTimeout(()=>{},10000);`;
+  const holder=spawn(process.execPath,['--input-type=module','-e',code],{cwd,env,stdio:['ignore','pipe','pipe']});
+  await new Promise((resolve,reject)=>{let out=''; const timer=setTimeout(()=>reject(new Error('LOCK_HOLDER_TIMEOUT')),5000); holder.stdout.on('data',chunk=>{out+=chunk; if(out.includes('LOCK_HELD')){clearTimeout(timer);resolve();}}); holder.once('error',reject);});
+  const blocked=run(['recover'],cwd,env); assert.notEqual(blocked.status,0); assert.match(blocked.stderr,/CONTROLLER_LOCKED/);
+  holder.kill(); await new Promise(resolve=>holder.once('exit',resolve));
+  const takeover=run(['recover'],cwd,env); assert.equal(takeover.status,0,takeover.stderr); assert.match(takeover.stdout,/SAFE_RESUME/);
 });

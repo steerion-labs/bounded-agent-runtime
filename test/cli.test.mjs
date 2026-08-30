@@ -46,3 +46,12 @@ test('dashboard serves sanitized status on loopback',async()=>{
     const page=await getLocal(address.port,'/'); assert.equal(page.status,200); assert.match(page.body,/Read-only local control view/);
   } finally { server.closeAllConnections?.(); await new Promise(resolve=>server.close(resolve)); }
 });
+
+test('bar run rejects same task id with different persisted authority',()=>{
+  const src=sourceRepo(), cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-cli-match-')), taskFile=path.join(cwd,'task.json');
+  const env={...process.env,BOUNDED_AGENT_RUNTIME_ROOT:path.join(cwd,'runtime')};
+  const made=run(['task','--repo',src,'--intent','x','--allow','src','--out',taskFile],cwd,env); assert.equal(made.status,0,made.stderr);
+  const first=run(['run','--task',taskFile],cwd,env); assert.equal(first.status,0,first.stderr); assert.match(first.stdout,/HUMAN_GATE_REQUIRED/);
+  const altered=JSON.parse(fs.readFileSync(taskFile,'utf8')); altered.intent='different authority with same id'; const other=path.join(cwd,'task-altered.json'); fs.writeFileSync(other,JSON.stringify(altered,null,2));
+  const second=run(['run','--task',other],cwd,env); assert.notEqual(second.status,0); assert.match(second.stderr,/TASK_FILE_MISMATCH/);
+});

@@ -26,7 +26,7 @@ The controller is responsible for checking changed paths and deriving the result
 
 ## Reviewer adapter
 
-A Reviewer should be independent from the Builder and receive the exact candidate identity being reviewed. Treat reviewer text as an opinion until the controller converts verified facts into evidence.
+A Reviewer receives a separate exact-candidate workspace. BAR proves candidate/workspace separation and records the configured worker hash, but it does not infer organizational, credential, provider or model independence. Treat Reviewer text as an opinion until the controller converts verified facts into Evidence.
 
 The Reviewer should not share Builder credentials or writable access to the Builder workspace in a protected deployment.
 

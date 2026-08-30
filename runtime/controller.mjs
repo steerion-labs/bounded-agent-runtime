@@ -3,7 +3,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   STATE_FILE, BUILDER_DIR, REVIEWER_DIR, VERIFICATION_DIR, ensureRuntimeDir, assertProtectedRootConfigured,
-  loadState, saveState, journal, transition, newLease, assertCurrentLease,
+  loadState, saveState, journal, transition, newLease, assertCurrentLease, acquireControllerLock, releaseControllerLock, claimControllerLease, sha256,
   validateTask, authorize, assertWorkerExecutionBoundary, assertVerificationExecutionBoundary, spendBudget, remainingWallClockMs, evidence, verifyEvidence, verifyStateEvidence,
   ensureGitRepo, seedLocalGitWorkspace, cloneReviewerWorkspace, cloneCandidateWorkspace, commitWorkspace, assertWorkspaceIdentity, assertWorkspaceScope, changedWorkspacePaths, gitExec,
   createGateChallenge, createHumanApproval, assertHumanApproval, recoverState,
@@ -31,6 +31,7 @@ function workerName(state, role) {
   const name = state.task.workers?.[role]?.adapter || 'demo';
   return assertAdapterName(name, role);
 }
+function workerConfigHash(state, role) { return sha256(JSON.stringify(state.task.workers?.[role] || { adapter: 'demo' })); }
 function runAdapter(state, adapterName, role, input, label) {
   assertWorkerExecutionBoundary(adapterName, role);
   const file = resolveAdapter(adapterName, role); let lastError;
@@ -96,7 +97,7 @@ function init(file) {
 function run() {
   const state = loadState();
   recoverState(state);
-  assertCurrentLease(state); validateTask(state.task); remainingWallClockMs(state);
+  claimControllerLease(state); assertCurrentLease(state); validateTask(state.task); remainingWallClockMs(state);
   if (state.state === 'HUMAN_GATE') { console.log('HUMAN_GATE_REQUIRED'); return; }
   if (state.state !== 'NEW') throw new Error(`SAFE_RESUME_REQUIRED:${state.state}`);
 
@@ -121,7 +122,7 @@ function run() {
   state.candidate_sha = identity.candidate_sha; state.tree_hash = identity.tree_hash; saveState(state);
   if (state.base_sha && gitExec(workspace, ['rev-parse','HEAD^']) !== state.base_sha) throw new Error('BASE_PARENT_DRIFT');
   assertWorkspaceScope(state.task, workspace, state.base_sha); assertWorkspaceIdentity(state, workspace);
-  const buildEvidence = evidence('builder_candidate', { ...identity, base_sha: state.base_sha, base_tree_hash: state.base_tree_hash, worker_adapter: builderAdapter, artifact: builder.artifact }, state, 'controller', 'CONTROLLER_VERIFIED');
+  const buildEvidence = evidence('builder_candidate', { ...identity, base_sha: state.base_sha, base_tree_hash: state.base_tree_hash, worker_adapter: builderAdapter, worker_config_hash: workerConfigHash(state, 'builder'), artifact: builder.artifact }, state, 'controller', 'CONTROLLER_VERIFIED');
   verifyEvidence(buildEvidence, state); transition(state, 'TESTING', buildEvidence);
 
   assertWorkspaceIdentity(state, workspace);
@@ -143,7 +144,7 @@ function run() {
   assertWorkspaceIdentity(state, reviewerWorkspace); assertCurrentLease(state); assertWorkspaceIdentity(state, workspace);
   if (review.decision !== 'APPROVE') throw new Error(`REVIEW_BLOCKED:${review.reason ?? 'unknown'}`);
   if (review.reviewed_candidate_sha !== state.candidate_sha || review.reviewed_tree_hash !== state.tree_hash) throw new Error('REVIEW_BINDING_MISMATCH');
-  const reviewEvidence = evidence('independent_review', { ...review, ...identity, worker_adapter: reviewerAdapter }, state, `reviewer:${reviewerAdapter}`, 'CONTROLLER_OBSERVED');
+  const reviewEvidence = evidence('review_observation', { ...review, ...identity, worker_adapter: reviewerAdapter, worker_config_hash: workerConfigHash(state, 'reviewer'), separate_workspace: true }, state, `reviewer:${reviewerAdapter}`, 'CONTROLLER_OBSERVED');
   verifyEvidence(reviewEvidence, state); transition(state, 'REVIEW_READY', reviewEvidence);
   assertWorkspaceIdentity(state, workspace);
   transition(state, 'HUMAN_GATE');
@@ -152,7 +153,7 @@ function run() {
   console.log('HUMAN_GATE_REQUIRED'); console.log(JSON.stringify(state.gate_challenge, null, 2));
 }
 function approve(signature) {
-  const state = loadState(); recoverState(state); assertCurrentLease(state); remainingWallClockMs(state);
+  const state = loadState(); recoverState(state); claimControllerLease(state); assertCurrentLease(state); remainingWallClockMs(state);
   if (state.workspace_path) assertWorkspaceIdentity(state, state.workspace_path);
   verifyStateEvidence(state);
   if (state.state !== 'HUMAN_GATE') throw new Error(`APPROVAL_NOT_ALLOWED_IN:${state.state}`);
@@ -168,10 +169,12 @@ function approve(signature) {
   for (const action of state.task.protected_actions) assertHumanApproval(state, action);
   console.log('ACCEPTED_NO_REMOTE_MUTATION_EXECUTED');
 }
-function recover() { const state = loadState(); console.log(recoverState(state)); }
-function authorizeProtected(action) { if (!action) throw new Error('PROTECTED_ACTION_REQUIRED'); const state = loadState(); recoverState(state); if (state.workspace_path) assertWorkspaceIdentity(state, state.workspace_path); verifyStateEvidence(state); if (authorize(state.task, action) !== 'HUMAN_GATE') throw new Error('PROTECTED_ACTION_NOT_DECLARED:' + action); assertHumanApproval(state, action); console.log('PROTECTED_ACTION_AUTHORIZED ' + action); }
+function recover() { const state = loadState(); const result = recoverState(state); claimControllerLease(state); console.log(result); }
+function authorizeProtected(action) { if (!action) throw new Error('PROTECTED_ACTION_REQUIRED'); const state = loadState(); recoverState(state); claimControllerLease(state); assertCurrentLease(state); if (state.workspace_path) assertWorkspaceIdentity(state, state.workspace_path); verifyStateEvidence(state); if (authorize(state.task, action) !== 'HUMAN_GATE') throw new Error('PROTECTED_ACTION_NOT_DECLARED:' + action); assertHumanApproval(state, action); console.log('PROTECTED_ACTION_AUTHORIZED ' + action); }
 function reset() { console.log(resetDemoRuntime()); }
+let controllerLock = null;
 try {
+  if (['init','run','approve','recover','authorize-protected'].includes(command)) controllerLock = acquireControllerLock();
   if (command === 'init') init(arg);
   else if (command === 'run') run();
   else if (command === 'approve') approve(arg);
@@ -180,4 +183,5 @@ try {
   else if (command === 'reset') reset();
   else throw new Error('USAGE:init <task.json> | run | approve <signature> | authorize-protected <action> | recover | reset');
 } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
+finally { if (controllerLock) { try { releaseControllerLock(controllerLock); } catch (error) { fail(error instanceof Error ? error.message : String(error)); } } }
 
