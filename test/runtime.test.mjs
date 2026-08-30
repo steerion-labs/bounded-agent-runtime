@@ -13,7 +13,8 @@ import { assertTransition } from '../runtime/state-machine.mjs';
 
 test('illegal transitions fail closed', () => assert.throws(() => assertTransition('NEW','BUILDING'), /ILLEGAL_TRANSITION/));
 test('unknown capability is denied', () => assert.throws(() => authorize({allowed_actions:['build_local'],protected_actions:[]}, 'remote_mutation'), /CAPABILITY_DENIED/));
-test('task-declared protected action routes to Human Gate', () => assert.equal(authorize({allowed_actions:[],protected_actions:['merge']}, 'merge'), 'HUMAN_GATE'));
+test('task-declared protected action routes to Human Gate', () => assert.equal(authorize({allowed_actions:['merge'],protected_actions:['merge']}, 'merge'), 'HUMAN_GATE'));
+test('protected but disallowed action is denied before Human Gate', () => assert.throws(() => authorize({allowed_actions:[],protected_actions:['merge']}, 'merge'), /CAPABILITY_DENIED:merge/));
 test('expired lease is rejected', () => assert.throws(() => assertFreshLease(newLease('t1', -1)), /STALE_LEASE/));
 test('fencing mismatch is rejected', () => assert.throws(() => assertFreshLease(newLease('t1',10000,5), 6), /FENCING_MISMATCH/));
 test('model budget exhaustion rejected', () => assert.throws(() => assertBudget({started_at:new Date().toISOString(),budget:{limits:{model_calls:1,wall_clock_seconds:10},used:{model_calls:1}}},{model_calls:1}), /BUDGET_EXCEEDED:model_calls/));

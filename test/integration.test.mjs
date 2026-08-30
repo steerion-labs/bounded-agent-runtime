@@ -162,3 +162,21 @@ test('state rollback is rejected against the authenticated journal before rerun'
   const rerun=run(['run'],cwd);
   assert.notEqual(rerun.status,0); assert.match(rerun.stderr,/RECOVERY_STATE_JOURNAL_MISMATCH/);
 });
+
+test('removing protected action from persisted task is rejected',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-task-bind-')); const keys=setupKeys(cwd);
+  assert.equal(run(['init',task],cwd,keys.env).status,0); assert.equal(run(['run'],cwd,keys.env).status,0);
+  const state=JSON.parse(fs.readFileSync(stateFor(cwd),'utf8'));
+  state.task.protected_actions=[];
+  fs.writeFileSync(stateFor(cwd),JSON.stringify(state,null,2));
+  const auth=run(['authorize-protected','merge'],cwd,keys.env);
+  assert.notEqual(auth.status,0); assert.match(auth.stderr,/TASK_BINDING_INVALID|CAPABILITY_DENIED|PROTECTED_ACTION_NOT_DECLARED/);
+});
+
+test('hostile Git environment variables are neutralized',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-gitenv-'));
+  const hostile=path.join(cwd,'hostile.git'); fs.mkdirSync(hostile);
+  const env=baseEnv(cwd,{GIT_DIR:hostile,GIT_WORK_TREE:cwd,GIT_TEMPLATE_DIR:hostile,GIT_ALTERNATE_OBJECT_DIRECTORIES:hostile});
+  assert.equal(run(['init',task],cwd,env).status,0);
+  const result=run(['run'],cwd,env); assert.equal(result.status,0,result.stderr); assert.match(result.stdout,/HUMAN_GATE_REQUIRED/);
+});

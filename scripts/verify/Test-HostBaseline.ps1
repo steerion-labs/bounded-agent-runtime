@@ -22,7 +22,8 @@ foreach ($sid in @($builderSid,$reviewerSid)) {
 $zones = 'runtime-core','runtime-state','secrets','evidence','builder-work','reviewer-work','journal'
 foreach ($zone in $zones) {
     if (-not (Test-Path (Join-Path $Root $zone))) { $failures.Add("Missing zone: $zone") }
-}$forbidden = @('runtime-core','runtime-state','secrets','journal')
+}
+$forbidden = @('runtime-core','runtime-state','secrets','journal')
 foreach ($zone in $forbidden) {
     $acl = Get-Acl (Join-Path $Root $zone)
     foreach ($rule in $acl.Access) {

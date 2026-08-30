@@ -17,7 +17,7 @@ The reference implementation demonstrates:
 - controller-derived Git commit/tree identity
 - allowlisted candidate paths
 - HMAC-authenticated evidence
-- HMAC-chained journal integrity with truncation detection
+- HMAC-chained journal integrity with truncation detection when the journal integrity key remains controller-only
 - Ed25519 Human Gate approvals with identity and public-key fingerprint pinning
 - persistent one-time approval nonce consumption
 - Windows role-account and protected-directory setup

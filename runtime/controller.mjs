@@ -111,7 +111,7 @@ function approve(signature) {
   console.log('ACCEPTED_NO_REMOTE_MUTATION_EXECUTED');
 }
 function recover() { const state = loadState(); console.log(recoverState(state)); }
-function authorizeProtected(action) { if (!action) throw new Error('PROTECTED_ACTION_REQUIRED'); const state = loadState(); recoverState(state); if (state.workspace_path) assertWorkspaceIdentity(state, state.workspace_path); verifyStateEvidence(state); assertHumanApproval(state, action); console.log('PROTECTED_ACTION_AUTHORIZED ' + action); }
+function authorizeProtected(action) { if (!action) throw new Error('PROTECTED_ACTION_REQUIRED'); const state = loadState(); recoverState(state); if (state.workspace_path) assertWorkspaceIdentity(state, state.workspace_path); verifyStateEvidence(state); if (authorize(state.task, action) !== 'HUMAN_GATE') throw new Error('PROTECTED_ACTION_NOT_DECLARED:' + action); assertHumanApproval(state, action); console.log('PROTECTED_ACTION_AUTHORIZED ' + action); }
 function reset() { console.log(resetDemoRuntime()); }
 try {
   if (command === 'init') init(arg);

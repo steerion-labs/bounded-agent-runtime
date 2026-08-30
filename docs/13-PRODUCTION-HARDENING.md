@@ -12,3 +12,5 @@ The included runtime is a reference implementation. Before real remote mutation:
 8. Add crash/replay tests for every remote mutation adapter.
 9. Run hostile prompt, filesystem, credential and stale-controller tests.
 10. Never treat this repository alone as a security certification.
+
+The reference journal verifies the full authenticated chain before each append. This deliberately favors fail-closed integrity over throughput and is suitable for reference-scale runs, not an unbounded production journal. Large deployments should add rotation/checkpointing without weakening verification. If the journal is already invalid, do not append a synthetic `SECURITY_STOP` to the corrupted chain; surface the stop through a separate trusted operator channel.

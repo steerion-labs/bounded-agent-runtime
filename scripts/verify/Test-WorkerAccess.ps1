@@ -15,12 +15,15 @@ $protectedProbe = Join-Path $Root 'secrets\worker-access-probe.txt'
 Set-Content -Path $protectedProbe -Value 'controller-only' -Encoding ASCII
 $builderFile = Join-Path $Root 'builder-work\builder-probe.txt'
 $reviewerFile = Join-Path $Root 'reviewer-work\reviewer-probe.txt'
+$protectedLiteral = $protectedProbe.Replace("'", "''")
+$builderLiteral = $builderFile.Replace("'", "''")
+$reviewerLiteral = $reviewerFile.Replace("'", "''")
 try {
-    Invoke-Probe $BuilderCredential "try { Get-Content -LiteralPath '$protectedProbe' -ErrorAction Stop | Out-Null; exit 41 } catch { exit 0 }" 0 'Builder protected read denial'
-    Invoke-Probe $ReviewerCredential "try { Get-Content -LiteralPath '$protectedProbe' -ErrorAction Stop | Out-Null; exit 42 } catch { exit 0 }" 0 'Reviewer protected read denial'
-    Invoke-Probe $BuilderCredential "try { Set-Content -LiteralPath '$builderFile' -Value ok -ErrorAction Stop; exit 0 } catch { exit 43 }" 0 'Builder own workspace write'
-    Invoke-Probe $ReviewerCredential "try { Set-Content -LiteralPath '$reviewerFile' -Value ok -ErrorAction Stop; exit 0 } catch { exit 44 }" 0 'Reviewer own workspace write'
-    Invoke-Probe $ReviewerCredential "try { Set-Content -LiteralPath '$builderFile' -Value bad -ErrorAction Stop; exit 45 } catch { exit 0 }" 0 'Reviewer builder-work write denial'
+    Invoke-Probe $BuilderCredential "try { Get-Content -LiteralPath '$protectedLiteral' -ErrorAction Stop | Out-Null; exit 41 } catch { exit 0 }" 0 'Builder protected read denial'
+    Invoke-Probe $ReviewerCredential "try { Get-Content -LiteralPath '$protectedLiteral' -ErrorAction Stop | Out-Null; exit 42 } catch { exit 0 }" 0 'Reviewer protected read denial'
+    Invoke-Probe $BuilderCredential "try { Set-Content -LiteralPath '$builderLiteral' -Value ok -ErrorAction Stop; exit 0 } catch { exit 43 }" 0 'Builder own workspace write'
+    Invoke-Probe $ReviewerCredential "try { Set-Content -LiteralPath '$reviewerLiteral' -Value ok -ErrorAction Stop; exit 0 } catch { exit 44 }" 0 'Reviewer own workspace write'
+    Invoke-Probe $ReviewerCredential "try { Set-Content -LiteralPath '$builderLiteral' -Value bad -ErrorAction Stop; exit 45 } catch { exit 0 }" 0 'Reviewer builder-work write denial'
     Write-Host 'WORKER_ACCESS_PASS'
 } finally {
     Remove-Item $protectedProbe,$builderFile,$reviewerFile -Force -ErrorAction SilentlyContinue

@@ -162,11 +162,12 @@ export function validateTask(task) {
   for (const key of ['schema_version','task_id','intent','allowed_actions','allowed_paths','budget','protected_actions']) if (task[key] === undefined) throw new Error(`TASK_FIELD_MISSING:${key}`);
   if (!Array.isArray(task.allowed_actions) || !Array.isArray(task.allowed_paths) || !Array.isArray(task.protected_actions)) throw new Error('TASK_ARRAY_INVALID');
   for (const key of ['model_calls','wall_clock_seconds','retries']) if (!Number.isFinite(task.budget[key]) || task.budget[key] < 0) throw new Error(`TASK_BUDGET_INVALID:${key}`);
+  for (const action of task.protected_actions) if (!task.allowed_actions.includes(action)) throw new Error(`PROTECTED_ACTION_NOT_ALLOWED:${action}`);
   return task;
 }
 export function authorize(task, action) {
-  if (task.protected_actions.includes(action)) return 'HUMAN_GATE';
   if (!task.allowed_actions.includes(action)) throw new Error(`CAPABILITY_DENIED:${action}`);
+  if (task.protected_actions.includes(action)) return 'HUMAN_GATE';
   return 'ALLOW';
 }
 export function assertAllowedPath(task, relativePath) {
@@ -196,6 +197,7 @@ export function verifyEvidence(item, state) {
   const { integrity_hmac, ...base } = item;
   if (!integrity_hmac || hmac256(integrityKey(), JSON.stringify(base)) !== integrity_hmac) throw new Error('EVIDENCE_INTEGRITY_INVALID');
   if (item.task_id !== state.task_id || item.candidate_sha !== state.candidate_sha || item.tree_hash !== state.tree_hash) throw new Error('EVIDENCE_BINDING_INVALID');
+  if (item.input_hash !== sha256(JSON.stringify(state.task))) throw new Error('TASK_BINDING_INVALID');
   return true;
 }
 export function assertBoundEvidence(state, candidate) {
@@ -204,8 +206,11 @@ export function assertBoundEvidence(state, candidate) {
   if (candidate.tree_hash !== state.tree_hash) throw new Error('TREE_BINDING_MISMATCH');
 }
 function safeGitEnv(extra = {}) {
-  return { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null', GIT_TERMINAL_PROMPT: '0', ...extra };
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) if (key.startsWith('GIT_')) delete env[key];
+  return { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null', GIT_TERMINAL_PROMPT: '0', ...extra };
 }
+
 export function gitExec(repo, args, { timeout = 10000, stdio = ['ignore','pipe','pipe'], trim = true } = {}) {
   const hookPath = path.join(repo, '.disabled-hooks');
   const output = execFileSync('git', ['-c', `core.hooksPath=${hookPath}`, '-c', 'protocol.file.allow=never', '-C', repo, ...args],
@@ -339,7 +344,8 @@ export function createHumanApproval(state, signatureBase64) {
     signed_payload_hash: challengeHash(state.gate_challenge, policy.identity), approved_at: new Date().toISOString() };
 }
 export function assertHumanApproval(state, action) {
-  if (!state.task?.protected_actions?.includes(action)) return true;
+  if (!state.task?.allowed_actions?.includes(action)) throw new Error('CAPABILITY_DENIED:' + action);
+  if (!state.task?.protected_actions?.includes(action)) throw new Error('PROTECTED_ACTION_NOT_DECLARED:' + action);
   const policy = approverPolicy(); const approval = state.human_approval;
   if (!approval || !['ACCEPTED','CONTROLLER_MUTATION','VERIFIED','DONE'].includes(state.state)) throw new Error('HUMAN_GATE_REQUIRED:' + action);
   if (approval.decision !== 'ACCEPT' || approval.decision_identity !== policy.identity || approval.public_key_fingerprint !== policy.fingerprint) throw new Error('HUMAN_APPROVAL_POLICY_MISMATCH');
