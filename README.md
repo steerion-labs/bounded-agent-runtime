@@ -1,4 +1,4 @@
-﻿# Bounded Agent Runtime
+# Bounded Agent Runtime
 
 ### Give coding agents freedom to work. Keep authority out of the model.
 
@@ -207,4 +207,3 @@ If this solves a problem you care about, **star the repo**. It helps other agent
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
-
