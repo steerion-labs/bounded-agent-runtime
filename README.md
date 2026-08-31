@@ -105,8 +105,8 @@ Use the agent you already like. BAR focuses on the part agent frameworks should 
 
 | Adapter | Builder | Reviewer | Default boundary |
 | --- | ---: | ---: | --- |
-| Codex | yes | yes | workspace-write / read-only |
-| Claude Code | yes | yes | edit tools / plan + read |
+| Codex | yes | yes | workspace-write Builder / read-only Reviewer |
+| Claude Code | yes | yes | Safe Mode, edit tools / plan + read |
 | OpenCode | yes | yes | pure mode, no auto-approve |
 | Docker | yes | yes | disposable, network-none |
 
@@ -120,8 +120,8 @@ bar task `
   --intent "Fix the failing parser test" `
   --allow src `
   --allow test `
-  --builder codex `
-  --reviewer claude `
+  --builder auto `
+  --reviewer auto `
   --verify npm `
   --verify-arg test `
   --out bounded-task.json
@@ -131,6 +131,8 @@ bar status
 ```
 
 BAR refuses dirty source repositories and implicit full-repo write authority. The Builder works on a controller-created copy, BAR derives the candidate identity itself, verification runs separately, and the Reviewer receives an exact candidate copy.
+
+`auto` is resolved once when the task is created. BAR writes the concrete Builder and Reviewer adapters into the task before hashing authority. It never switches agents silently during a run. If the selected CLI is not authenticated, BAR fails closed and tells the operator to authenticate it.
 
 ## Security posture
 

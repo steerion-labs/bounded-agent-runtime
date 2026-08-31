@@ -22,6 +22,14 @@ export function assertAdapterName(name, role) {
   return name;
 }
 
+
+export function selectAvailableAdapter(role, agents) {
+  const order = role === 'builder' ? ['codex','claude','opencode','container','generic'] : ['codex','claude','opencode','ollama','container','generic'];
+  const selected = order.find(name => agents?.[name]?.installed && definitions[name]?.roles.includes(role));
+  if (!selected) throw new Error(`AUTO_ADAPTER_UNAVAILABLE:${role}`);
+  return selected;
+}
+
 export function resolveAdapter(name, role) {
   assertAdapterName(name, role);
   if (name === 'demo') return role === 'builder' ? 'demo-builder.mjs' : 'demo-reviewer.mjs';

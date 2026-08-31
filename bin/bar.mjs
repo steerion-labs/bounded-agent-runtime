@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { STATE_FILE, readJson } from '../runtime/core.mjs';
 import { doctorReport, formatDoctor } from '../runtime/doctor.mjs';
-import { adapterDefinitions, assertAdapterName } from '../runtime/adapters/registry.mjs';
+import { adapterDefinitions, assertAdapterName, selectAvailableAdapter } from '../runtime/adapters/registry.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -51,11 +51,16 @@ function workerSpec(role, adapter) {
 
 function generateTask() {
   const repoArg = option('--repo'); const intent = option('--intent');
-  if (!repoArg || !intent) throw new Error('USAGE:bar task --repo <git-repo> --intent <text> [--builder codex] [--reviewer claude] [--verify npm --verify-arg test] [--out task.json]');
+  if (!repoArg || !intent) throw new Error('USAGE:bar task --repo <git-repo> --intent <text> [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--verify npm --verify-arg test] [--out task.json]');
   const repo = path.resolve(repoArg); const top = git(repo, ['rev-parse','--show-toplevel']);
   if (git(top, ['status','--porcelain=v1','--untracked-files=all'])) throw new Error('SOURCE_REPO_DIRTY:commit or stash changes before creating a bounded task');
-  const builder = option('--builder', 'demo'); const reviewer = option('--reviewer', 'demo');
+  const requestedBuilder = option('--builder', 'demo'); const requestedReviewer = option('--reviewer', 'demo');
+  const agents = doctorReport().agents;
+  const builder = requestedBuilder === 'auto' ? selectAvailableAdapter('builder', agents) : requestedBuilder;
+  const reviewer = requestedReviewer === 'auto' ? selectAvailableAdapter('reviewer', agents) : requestedReviewer;
   assertAdapterName(builder, 'builder'); assertAdapterName(reviewer, 'reviewer');
+  if (requestedBuilder === 'auto') console.log(`AUTO_SELECTED builder=${builder}`);
+  if (requestedReviewer === 'auto') console.log(`AUTO_SELECTED reviewer=${reviewer}`);
   const repoEntries = git(top, ['ls-tree','--name-only','HEAD']).split(/\r?\n/).filter(Boolean);
   if (!repoEntries.length) throw new Error('SOURCE_REPO_EMPTY');
   let entries = options('--allow').map(value=>value.replaceAll('\\','/').replace(/^\.\//,'').replace(/\/$/,''));
@@ -122,6 +127,7 @@ function quickstart() {
   } finally { fs.rmSync(demoRoot,{recursive:true,force:true}); }
 }
 function friendlyError(message) {
+  if (message.includes('_AUTH_REQUIRED')) return `${message}\nNEXT: Authenticate the selected agent CLI outside BAR, then rerun the same bounded task. BAR will not switch adapters silently.`;
   const guides=[
     ['ALLOWED_PATH_REQUIRED','No write scope was granted. Add `--allow <path>` (repeatable) or explicitly use `--allow-all`.'],
     ['SOURCE_REPO_DIRTY','The source repository has uncommitted changes. Commit or stash them, then retry.'],
@@ -129,6 +135,7 @@ function friendlyError(message) {
     ['RUNTIME_ALREADY_INITIALIZED_FOR','BAR already owns another persisted task. Inspect `bar status`; use `bar reset` only when you intend to discard it.'],
     ['TASK_FILE_MISMATCH','The supplied task differs from persisted authority. Do not overwrite authority in place; inspect status and reset deliberately.'],
     ['ADAPTER_UNKNOWN','Unknown adapter. Run `bar agents` and see docs/19-ADAPTER-CONFORMANCE.md.'],
+    ['AUTO_ADAPTER_UNAVAILABLE','No installed adapter can satisfy that role. Run `bar agents`, install one, then recreate the task.'],
     ['CONTROLLER_EXIT','The controller failed closed. Run `bar status` and `bar recover`; inspect the attached controller error before resetting.'],
     ['QUICKSTART_PREREQUISITE_FAILED','A required prerequisite is missing. Run `bar doctor` for the exact check and install it before retrying.']
   ];
@@ -136,7 +143,7 @@ function friendlyError(message) {
   return hit ? `${message}\nNEXT: ${hit[1]}` : message;
 }
 function help() {
-  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder codex] [--reviewer claude] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action>\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
+  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action>\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
 }
 
 try {

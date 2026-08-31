@@ -74,8 +74,39 @@ test('CLI adapter contracts keep unsafe bypass flags out of primary defaults',as
   const codex=buildAgentInvocation({adapter:'codex',role:'builder',task,workspace:'C:/w',prompt:'x'});
   assert.ok(codex.args.includes('workspace-write')); assert.equal(codex.args.includes('danger-full-access'),false); assert.equal(codex.args.includes('--full-auto'),false);
   const claude=buildAgentInvocation({adapter:'claude',role:'reviewer',task,workspace:'C:/w',prompt:'x'});
-  assert.ok(claude.args.includes('plan')); assert.equal(claude.args.includes('--dangerously-skip-permissions'),false);
+  assert.ok(claude.args.includes('plan')); assert.ok(claude.args.includes('--safe-mode')); assert.equal(typeof claude.input,'string'); assert.equal(claude.args.includes('--dangerously-skip-permissions'),false);
   const openTask={...task,workers:{builder:{adapter:'opencode'}}};
   const opencode=buildAgentInvocation({adapter:'opencode',role:'builder',task:openTask,workspace:'C:/w',prompt:'x'});
   assert.ok(opencode.args.includes('--pure')); assert.equal(opencode.args.includes('--auto'),false);
+});
+
+test('Windows npm command shims resolve without shell execution', async t => {
+  if (process.platform !== 'win32') return t.skip('Windows-specific launcher contract');
+  const { resolveLaunchCommand } = await import('../runtime/adapters/launcher.mjs');
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'bar-launcher-'));
+  const target=path.join(dir,'node_modules','demo','bin','tool.js'); fs.mkdirSync(path.dirname(target),{recursive:true}); fs.writeFileSync(target,'');
+  const shim=path.join(dir,'bar-test-shim.cmd');
+  fs.writeFileSync(shim,'@ECHO off\r\n"%dp0%\\node.exe" "%dp0%\\node_modules\\demo\\bin\\tool.js" %*\r\n');
+  const previous=process.env.PATH; process.env.PATH=`${dir};${previous}`;
+  try {
+    const resolved=resolveLaunchCommand('bar-test-shim',['hello']);
+    assert.equal(resolved.command,process.execPath); assert.equal(path.normalize(resolved.args[0]),path.normalize(target)); assert.equal(resolved.args[1],'hello');
+  } finally { process.env.PATH=previous; fs.rmSync(dir,{recursive:true,force:true}); }
+});
+
+test('launcher failures preserve actionable OS error details', async()=>{
+  const { launchFailureDetail, classifyLaunchFailure } = await import('../runtime/adapters/launcher.mjs');
+  assert.match(launchFailureDetail({error:{code:'ENOENT',message:'spawn missing ENOENT'}}),/ENOENT/);
+  assert.equal(launchFailureDetail({status:null,stderr:'',stdout:''}),'NO_EXIT_STATUS');
+  assert.match(classifyLaunchFailure('claude','reviewer',{status:1,stderr:'Failed to authenticate: OAuth session expired'}),/CLAUDE_REVIEWER_AUTH_REQUIRED/);
+});
+
+test('auto adapter selection is deterministic and role-aware',async()=>{
+  const { selectAvailableAdapter } = await import('../runtime/adapters/registry.mjs');
+  const agents={codex:{installed:false},claude:{installed:true},opencode:{installed:true},ollama:{installed:true},container:{installed:false},generic:{installed:false}};
+  assert.equal(selectAvailableAdapter('builder',agents),'claude');
+  assert.equal(selectAvailableAdapter('reviewer',agents),'claude');
+  const reviewerOnly={...agents,claude:{installed:false},opencode:{installed:false}};
+  assert.equal(selectAvailableAdapter('reviewer',reviewerOnly),'ollama');
+  assert.throws(()=>selectAvailableAdapter('builder',reviewerOnly),/AUTO_ADAPTER_UNAVAILABLE:builder/);
 });

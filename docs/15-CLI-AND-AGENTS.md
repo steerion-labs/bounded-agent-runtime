@@ -30,8 +30,8 @@ The generated task binds source commit, Builder/Reviewer adapters, allowed paths
 
 | Adapter | Builder | Reviewer | Safety-oriented defaults |
 | --- | ---: | ---: | --- |
-| Codex | yes | yes | `workspace-write` Builder, `read-only` Reviewer, ephemeral session, ignored user config |
-| Claude Code | yes | yes | edit-only Builder tools, plan/read Reviewer tools, strict MCP config |
+| Codex | yes | yes | `workspace-write` Builder + ignored rules; `read-only` Reviewer + ignored user config/rules; ephemeral session |
+| Claude Code | yes | yes | Safe Mode, no session persistence, edit-only Builder tools, plan/read Reviewer tools, strict MCP config |
 | OpenCode | yes | yes | `--pure`, explicit directory, never `--auto` |
 | Ollama | no | yes | explicit model required |
 | Generic | yes | yes | executable + argv supplied out-of-band by controller environment |
@@ -39,7 +39,9 @@ The generated task binds source commit, Builder/Reviewer adapters, allowed paths
 
 BAR does not add Codex approval automation, Codex sandbox bypass, Claude permission bypass or OpenCode auto-approval flags.
 
-External agent authentication remains the responsibility of the installed CLI. BAR deliberately does not copy provider credentials into task files.
+External agent authentication remains the responsibility of the installed CLI. `bar agents` proves executable discovery, not provider login. Authenticate the vendor CLI before a real task. BAR deliberately does not copy provider credentials into task files. Authentication failures are reported as `*_AUTH_REQUIRED`.
+
+On Windows, BAR resolves native executables and standard npm `.cmd` shims to their underlying JS/EXE target without enabling shell execution. This is required for globally installed CLIs such as Codex and OpenCode.
 
 ## Run and inspect
 
@@ -61,3 +63,9 @@ bar authorize merge
 ```
 
 Protected mode requires approver identity, public key path and pinned fingerprint in controller configuration. Authorization never performs a remote mutation by itself.
+
+## Automatic adapter selection
+
+Use `--builder auto` or `--reviewer auto` when you want BAR to choose from installed adapters. Selection happens once during task creation, the concrete adapter is written into the task and therefore bound into task authority and evidence. BAR never switches adapters silently during `bar run`.
+
+Priority is deterministic: Builder `codex -> claude -> opencode -> container -> generic`; Reviewer `codex -> claude -> opencode -> ollama -> container -> generic`. Installation detection does not prove provider authentication; an expired or missing login fails closed with an actionable auth error.

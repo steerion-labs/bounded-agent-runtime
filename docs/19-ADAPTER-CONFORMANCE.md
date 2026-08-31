@@ -14,8 +14,8 @@ The controller independently derives Git commit/tree identity, detects workspace
 
 | Adapter | Builder | Reviewer | BAR default boundary | Unsafe defaults BAR does not use |
 | --- | ---: | ---: | --- | --- |
-| Codex | yes | yes | `workspace-write` / `read-only`, ephemeral, ignored user config | `danger-full-access`, bypass flags |
-| Claude Code | yes | yes | edit-only tool set / plan+read tool set | `--dangerously-skip-permissions` |
+| Codex | yes | yes | Builder: `workspace-write`, ignored rules; Reviewer: `read-only`, ignored user config/rules; ephemeral | `danger-full-access`, bypass flags |
+| Claude Code | yes | yes | Safe Mode, no persistence, edit-only / plan+read tool sets, strict MCP config | `--dangerously-skip-permissions` |
 | OpenCode | yes | yes | non-interactive `run`, `--pure`, controller verification | auto-approve modes |
 | Ollama | no | yes | local reviewer only | builder authority |
 | Docker | yes | yes | disposable container, `--network none`, no host `.git` | host credential inheritance |
@@ -52,7 +52,7 @@ Run `bar agents` first to see which optional CLIs BAR detects. Credentials used 
 
 ## Compatibility snapshot
 
-The v0.4 adapter contract was checked on Windows on 2026-08-31 against locally installed CLIs:
+The v0.5 adapter contract was checked on Windows on 2026-08-31 against locally installed CLIs:
 
 - Codex CLI `0.150.1`
 - Claude Code `2.1.247`
@@ -60,3 +60,13 @@ The v0.4 adapter contract was checked on Windows on 2026-08-31 against locally i
 - Docker `29.7.2`
 
 BAR tests the invocation contract and safe defaults, but external CLIs evolve independently. Run `bar doctor` and `bar agents` after upgrades, and treat an incompatible invocation as a fail-closed adapter issue rather than weakening the authority boundary.
+
+## Windows real-agent proof
+
+v0.5 adds shell-free resolution for npm Windows launchers. A real clean-repository smoke test reached `HUMAN_GATE_REQUIRED` with Codex as both Builder and Reviewer after controller-observed verification. Claude invocation was also exercised through its real CLI; provider authentication must be valid independently of BAR.
+
+## Automatic adapter selection
+
+Use `--builder auto` or `--reviewer auto` when you want BAR to choose from installed adapters. Selection happens once during task creation, the concrete adapter is written into the task and therefore bound into task authority and evidence. BAR never switches adapters silently during `bar run`.
+
+Priority is deterministic: Builder `codex -> claude -> opencode -> container -> generic`; Reviewer `codex -> claude -> opencode -> ollama -> container -> generic`. Installation detection does not prove provider authentication; an expired or missing login fails closed with an actionable auth error.
