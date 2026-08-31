@@ -1,10 +1,10 @@
-# Bounded Agent Runtime
+﻿# Bounded Agent Runtime
 
 ### Give coding agents freedom to work. Keep authority out of the model.
 
 **BAR is a model-agnostic security runtime for autonomous coding agents.** Codex, Claude Code, OpenCode, containers or your own agent can build and review code, while a deterministic controller keeps scope, evidence, budgets and protected-action authorization outside the LLM.
 
-> **Agents think. BAR constrains. Evidence proves. Humans authorize protected decisions.**
+> **Agents think. The controller authorizes. Evidence proves. Humans approve protected decisions.**
 
 [![Release](https://img.shields.io/github/v/release/steerion-labs/bounded-agent-runtime?label=release)](https://github.com/steerion-labs/bounded-agent-runtime/releases)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -27,7 +27,7 @@ Expected stop:
 4/4 PASS: HUMAN_GATE_REQUIRED
 ```
 
-No real merge. No deploy. No release. BAR proves the workflow stops before protected authority.
+No real merge. No deploy. No release. The reference quickstart proves its synthetic workflow stops before any protected remote action.
 
 ## The problem BAR solves
 
@@ -42,7 +42,7 @@ BAR separates those concerns.
 | Agent output can directly drive actions | Agent output remains untrusted input |
 | Effective scope can drift | Allowed paths and actions are task-bound |
 | Agent can inspect its own work | Reviewer is separate and candidate-bound |
-| “Tests passed” can be a claim | Verification becomes controller-observed evidence |
+| â€œTests passedâ€ can be a claim | Verification becomes controller-observed evidence |
 | Retry loops can run indefinitely | Calls, retries and wall time are budgeted |
 | Approval can go stale | Human Gate is exact-candidate and replay protected |
 | Tool access can imply permission | Capability never becomes authority |
@@ -101,19 +101,19 @@ Use the agent you already like. BAR focuses on the part agent frameworks should 
 - leases, fencing, retry/model/wall-clock budgets and authenticated journal chain
 - read-only MCP and loopback dashboard
 - optional HTTPS allowlist broker with controller-owned secret injection
-- Windows protected mode with separate role accounts, SID ACLs and real worker-token probes
+- Windows host-hardening scripts for separate role accounts, SID ACLs and real worker-token probes
 - adversarial tests for stale evidence, replay, path escape, hostile Git state and worker mutation
 
 ## Supported agents
 
 | Adapter | Builder | Reviewer | Default boundary |
 | --- | ---: | ---: | --- |
-| Codex | ✅ | ✅ | workspace-write / read-only |
-| Claude Code | ✅ | ✅ | edit tools / plan + read |
-| OpenCode | ✅ | ✅ | pure mode, no auto-approve |
-| Ollama | — | ✅ | local reviewer |
-| Docker | ✅ | ✅ | disposable, network-none |
-| Generic command | ✅ | ✅ | bounded workspace + controller checks |
+| Codex | âœ… | âœ… | workspace-write / read-only |
+| Claude Code | âœ… | âœ… | edit tools / plan + read |
+| OpenCode | âœ… | âœ… | pure mode, no auto-approve |
+| Ollama | â€” | âœ… | local reviewer |
+| Docker | âœ… | âœ… | disposable, network-none |
+| Generic command | âœ… | âœ… | bounded workspace + controller checks |
 
 BAR deliberately avoids dangerous permission-bypass flags in its primary adapter defaults.
 
@@ -145,20 +145,20 @@ Repository text, prompts, memory, model output, MCP/tool output and reviewer pro
 
 Read [SECURITY.md](SECURITY.md), the [Threat Model](docs/12-THREAT-MODEL.md) and [Production Hardening](docs/13-PRODUCTION-HARDENING.md).
 
-## Protected Windows mode
+## Windows host hardening
 
-Demo mode proves the controller protocol. Protected mode adds a real host boundary with separate Windows identities and SID-based ACL zones.
+BAR includes Windows scripts that create and verify separate role accounts and SID-based ACL zones. These scripts harden and prove the host layout, but the current controller does **not** automatically launch local Codex, Claude or OpenCode workers under those Windows identities.
 
 ```text
 C:\BoundedAgentRuntime
-├── runtime-core       controller only
-├── runtime-state      controller only
-├── secrets            controller only
-├── journal            controller only
-├── verification-work  controller only
-├── evidence           controlled evidence zone
-├── builder-work       builder workspace
-└── reviewer-work      reviewer workspace
+â”œâ”€â”€ runtime-core       controller only
+â”œâ”€â”€ runtime-state      controller only
+â”œâ”€â”€ secrets            controller only
+â”œâ”€â”€ journal            controller only
+â”œâ”€â”€ verification-work  controller only
+â”œâ”€â”€ evidence           controlled evidence zone
+â”œâ”€â”€ builder-work       builder workspace
+â””â”€â”€ reviewer-work      reviewer workspace
 ```
 
 Static ACL inspection is not treated as effective-access proof. `Test-WorkerAccess.ps1` launches probes under the actual Builder and Reviewer credentials.
@@ -207,3 +207,4 @@ If this solves a problem you care about, **star the repo**. It helps other agent
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
