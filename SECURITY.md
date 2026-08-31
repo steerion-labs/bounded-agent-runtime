@@ -2,24 +2,46 @@
 
 ## Supported versions
 
-Security fixes are applied to the current `main` branch. Until tagged releases are published, no older commit should be assumed to receive security backports.
+Security fixes are applied to the current tagged release and `main`. Older releases may not receive backports unless explicitly stated in release notes.
 
 ## Reporting a vulnerability
 
-Do not open a public issue for a vulnerability that could enable authority bypass, credential exposure, sandbox escape, reviewer bypass, evidence forgery, Human Gate bypass or protected mutation.
+Do not open a public issue for an authority bypass, credential exposure, sandbox/container escape, reviewer bypass, evidence forgery, Human Gate bypass, MCP authority escalation, network-policy bypass or protected mutation.
 
-Use GitHub Private Vulnerability Reporting for this repository when available. If that channel is unavailable, open a minimal public issue asking the maintainers for a private reporting channel without including exploit details.
+Use GitHub Private Vulnerability Reporting when available. Otherwise open a minimal public issue asking for a private reporting channel without exploit details.
 
-Do not submit real secrets, tokens, private keys, customer data, proprietary source code or production credentials in a report.
-
-## Response expectations
-
-This is a community open-source reference project and does not offer a contractual SLA. Maintainers should acknowledge valid private reports as soon as practical, keep exploit details private while a fix is being prepared, and publish remediation notes after affected code is fixed.
+Never submit real secrets, tokens, private keys, customer data, proprietary source or production credentials in a report.
 
 ## Security scope
 
-The repository contains controller enforcement logic plus Windows isolation setup and verification scripts. It is not a security certification for a host.
+BAR separates model reasoning from controller authority. Task policy, candidate identity, controller-observed verification, Evidence and Human Gate authorization are verified independently of agent claims.
 
-The demo child processes do not prove separate Windows-token isolation. Before enabling real external mutations, operators must verify the actual worker identities, filesystem access, credentials, installed tools, network policy and mutation adapter behavior on the target host.
+Model output, repository content, Reviewer prose, MCP/tool output and dashboard content remain untrusted context.
 
-Any replacement adapter, new tool fallback, policy change or external side effect changes the threat model and requires re-verification.
+The optional Docker adapter is the currently implemented isolated Builder/Reviewer execution path for protected runtime use. Local Codex/Claude/OpenCode/Generic adapters are same-host child processes and BAR refuses to treat them as protected-mode worker isolation.
+
+The HTTPS broker is a narrow approved path, not direct-worker egress enforcement. Protected deployments must technically restrict direct worker network access. The Docker adapter uses `--network none`; local CLI adapters inherit the host/network boundary.
+
+Windows scripts create and test role accounts/ACL zones, including real credential probes, but the current controller does not automatically launch local CLI workers under those Windows identities. Do not infer token isolation from account existence alone.
+
+Controller-observed verification commands run as local child processes only outside protected mode. Protected mode fails closed rather than executing project-controlled verification commands under controller credentials.
+
+The journal HMAC protects integrity only while its key/anchor remain controller-only. It does not protect against full controller compromise.
+
+Container image identity is task-bound by immutable repository digest. Docker daemon compromise and malicious image behavior inside the container remain outside BAR's controller guarantee.
+
+## Operational requirements
+
+Before connecting a real mutation adapter, verify the exact runtime release, host identity/access boundary, worker egress boundary, candidate commit/tree, Evidence, Human Gate policy and the adapter's own authorization checks.
+
+Any new adapter, tool fallback, policy expansion, network route, secret path or external side effect changes the threat model and requires negative tests plus re-verification.
+
+## Response expectations
+
+BAR is community open source and provides no contractual SLA. Maintainers should acknowledge valid private reports as soon as practical and publish remediation notes after affected code is fixed.
+
+## Reviewer separation versus independence
+
+BAR verifies that review runs against an exact candidate in a separate workspace and records the configured Reviewer adapter hash in Evidence. The Evidence claim is `review_observation`, not a proof of organizational or model independence.
+
+If your policy requires independent review, configure and attest the required separation outside the model itself, for example distinct credentials, provider/model, container image, operator or trust domain. BAR must not infer independence merely because the Reviewer ran in a second process.

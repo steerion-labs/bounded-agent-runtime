@@ -1,20 +1,57 @@
 {
-  "name": "bounded-agent-runtime",
-  "version": "0.2.0",
-  "private": false,
-  "type": "module",
-  "description": "Model-agnostic reference runtime for AI coding agents with bounded authority, verified evidence and human gates",
-  "scripts": {
-    "test": "node --test test/*.test.mjs",
-    "demo:reset": "node runtime/controller.mjs reset",
-    "demo:init": "node runtime/controller.mjs init examples/task.example.json",
-    "demo:run": "node runtime/controller.mjs run",
-    "demo:recover": "node runtime/controller.mjs recover",
-    "gate:keygen": "node runtime/gate.mjs keygen",
-    "gate:sign": "node runtime/gate.mjs sign"
-  },
-  "engines": {
-    "node": ">=20"
-  },
-  "license": "Apache-2.0"
+    "name":  "bounded-agent-runtime",
+    "version":  "0.3.0",
+    "description":  "Model-agnostic security runtime for AI coding agents with bounded authority, verified evidence, separate review and human gates",
+    "type":  "module",
+    "private":  false,
+    "license":  "Apache-2.0",
+    "repository":  {
+                       "type":  "git",
+                       "url":  "git+https://github.com/steerion-labs/bounded-agent-runtime.git"
+                   },
+    "homepage":  "https://github.com/steerion-labs/bounded-agent-runtime#readme",
+    "keywords":  [
+                     "ai-agents",
+                     "coding-agents",
+                     "agent-runtime",
+                     "ai-safety",
+                     "human-in-the-loop",
+                     "mcp",
+                     "codex",
+                     "claude",
+                     "opencode",
+                     "security"
+                 ],
+    "engines":  {
+                    "node":  "\u003e=20"
+                },
+    "bin":  {
+                "bar":  "./bin/bar.mjs"
+            },
+    "files":  [
+                  "bin",
+                  "runtime",
+                  "scripts",
+                  "docs",
+                  "examples",
+                  "policies",
+                  "README.md",
+                  "SECURITY.md",
+                  "CONTRIBUTING.md",
+                  "LICENSE",
+                  "NOTICE"
+              ],
+    "scripts":  {
+                    "test":  "node --test test/*.test.mjs",
+                    "test:container":  "node --test test/container.e2e.mjs",
+                    "test:all":  "npm test \u0026\u0026 npm run test:container",
+                    "bar":  "node bin/bar.mjs",
+                    "doctor":  "node bin/bar.mjs doctor",
+                    "demo:reset":  "node runtime/controller.mjs reset",
+                    "demo:init":  "node runtime/controller.mjs init examples/task.example.json",
+                    "demo:run":  "node runtime/controller.mjs run",
+                    "demo:recover":  "node runtime/controller.mjs recover",
+                    "gate:keygen":  "node runtime/gate.mjs keygen",
+                    "gate:sign":  "node runtime/gate.mjs sign"
+                }
 }

@@ -26,13 +26,13 @@ The controller is responsible for checking changed paths and deriving the result
 
 ## Reviewer adapter
 
-A Reviewer should be independent from the Builder and receive the exact candidate identity being reviewed. Treat reviewer text as an opinion until the controller converts verified facts into evidence.
+A Reviewer receives a separate exact-candidate workspace. BAR proves candidate/workspace separation and records the configured worker hash, but it does not infer organizational, credential, provider or model independence. Treat Reviewer text as an opinion until the controller converts verified facts into Evidence.
 
 The Reviewer should not share Builder credentials or writable access to the Builder workspace in a protected deployment.
 
 ## Claude, Codex and OpenCode
 
-The simplest integration pattern is to replace `runtime/adapters/demo-builder.mjs` and/or `runtime/adapters/demo-reviewer.mjs` with a small launcher for your chosen coding agent.
+BAR now ships first-party launcher contracts for Codex, Claude Code and OpenCode plus Ollama Reviewer, Generic command and Docker container adapters. Use `bar task --builder ... --reviewer ...` before writing a custom adapter.
 
 Keep the launcher boring:
 
@@ -55,7 +55,7 @@ Agent -> bounded adapter -> selected MCP client/tools
                       -> controller policy remains authoritative
 ```
 
-The adapter should expose only the MCP servers/tools required for the task. A higher-risk fallback tool must not become available merely because the preferred tool failed.
+BAR also ships a read-only MCP server (`bar mcp`) for status, evidence and doctor inspection. It intentionally exposes no approval or protected-action tools. A higher-risk fallback tool must not become available merely because the preferred tool failed.
 
 ## Local models
 

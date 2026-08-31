@@ -10,7 +10,7 @@ $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run from elevated PowerShell.' }
 $fullRoot = [IO.Path]::GetFullPath($Root)
 if ($fullRoot -ne 'C:\BoundedAgentRuntime' -and -not $fullRoot.StartsWith('C:\BoundedAgentRuntime\')) { throw 'Safety guard: Root must stay under C:\BoundedAgentRuntime.' }
-$zones = 'runtime-core','runtime-state','secrets','evidence','builder-work','reviewer-work','journal'
+$zones = 'runtime-core','runtime-state','secrets','evidence','builder-work','reviewer-work','verification-work','journal'
 foreach ($zone in $zones) { New-Item -ItemType Directory -Force -Path (Join-Path $fullRoot $zone) | Out-Null }
 function Local-Sid([string]$Name) { return (Get-LocalUser -Name $Name -ErrorAction Stop).SID.Value }
 $controllerSid = Local-Sid $ControllerName
@@ -37,6 +37,7 @@ Set-ZoneAcl (Join-Path $fullRoot 'journal') @((Grant $controllerSid '(OI)(CI)F')
 Set-ZoneAcl (Join-Path $fullRoot 'evidence') @((Grant $controllerSid '(OI)(CI)F'),(Grant $reviewerSid '(OI)(CI)R'))
 Set-ZoneAcl (Join-Path $fullRoot 'builder-work') @((Grant $controllerSid '(OI)(CI)F'),(Grant $builderSid '(OI)(CI)M'),(Grant $reviewerSid '(OI)(CI)RX'))
 Set-ZoneAcl (Join-Path $fullRoot 'reviewer-work') @((Grant $controllerSid '(OI)(CI)F'),(Grant $reviewerSid '(OI)(CI)M'))
+Set-ZoneAcl (Join-Path $fullRoot 'verification-work') @((Grant $controllerSid '(OI)(CI)F'))
 [Environment]::SetEnvironmentVariable('BOUNDED_AGENT_RUNTIME_ROOT',$fullRoot,'Machine')
 [Environment]::SetEnvironmentVariable('BOUNDED_AGENT_PROTECTED_MODE','1','Machine')
 Write-Host "RUNTIME_LAYOUT_PASS $fullRoot"

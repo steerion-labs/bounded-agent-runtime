@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync, execFileSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 
 const repo=path.resolve(import.meta.dirname,'..');
 const controller=path.join(repo,'runtime','controller.mjs');
@@ -193,4 +193,88 @@ test('hostile Git environment variables are neutralized',()=>{
   const env=baseEnv(cwd,{GIT_DIR:hostile,GIT_WORK_TREE:cwd,GIT_TEMPLATE_DIR:hostile,GIT_ALTERNATE_OBJECT_DIRECTORIES:hostile});
   assert.equal(run(['init',task],cwd,env).status,0);
   const result=run(['run'],cwd,env); assert.equal(result.status,0,result.stderr); assert.match(result.stdout,/HUMAN_GATE_REQUIRED/);
+});
+function makeSourceRepo() {
+  const source=fs.mkdtempSync(path.join(os.tmpdir(),'bar-source-'));
+  execFileSync('git',['init','-q'],{cwd:source}); execFileSync('git',['config','user.name','Source'],{cwd:source}); execFileSync('git',['config','user.email','source@example.invalid'],{cwd:source});
+  fs.mkdirSync(path.join(source,'src')); fs.writeFileSync(path.join(source,'src','value.txt'),'before\n');
+  execFileSync('git',['add','.'],{cwd:source}); execFileSync('git',['commit','-q','-m','base'],{cwd:source});
+  return source;
+}
+function realTask(source,builder='generic',reviewer='demo') {
+  return {schema_version:1,task_id:`real-${Date.now()}-${Math.random()}`,intent:'Change src/value.txt',source:{kind:'local_git',path:source,ref:execFileSync('git',['rev-parse','HEAD'],{cwd:source,encoding:'utf8'}).trim()},workers:{builder:{adapter:builder},reviewer:{adapter:reviewer}},allowed_actions:['build_local','merge'],protected_actions:['merge'],allowed_paths:['src'],budget:{model_calls:4,wall_clock_seconds:60,retries:0}};
+}
+
+test('seeded local Git workspace runs bounded generic Builder through separate demo review',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-real-flow-')); const source=makeSourceRepo();
+  const worker=path.join(cwd,'worker.mjs'); fs.writeFileSync(worker,"import fs from 'node:fs';fs.writeFileSync('src/value.txt','after\\n');console.log('changed');\n");
+  const localTask=path.join(cwd,'task.json'); const spec=realTask(source); fs.writeFileSync(localTask,JSON.stringify(spec,null,2));
+  const env=baseEnv(cwd,{BOUNDED_AGENT_GENERIC_EXECUTABLE:process.execPath,BOUNDED_AGENT_GENERIC_ARGS_JSON:JSON.stringify([worker])});
+  assert.equal(run(['init',localTask],cwd,env).status,0); const result=run(['run'],cwd,env); assert.equal(result.status,0,result.stderr); assert.match(result.stdout,/HUMAN_GATE_REQUIRED/);
+  const state=JSON.parse(fs.readFileSync(stateFor(cwd),'utf8')); const sourceHead=execFileSync('git',['rev-parse','HEAD'],{cwd:source,encoding:'utf8'}).trim();
+  assert.equal(state.base_sha,sourceHead); assert.equal(execFileSync('git',['rev-parse','HEAD^'],{cwd:state.workspace_path,encoding:'utf8'}).trim(),sourceHead);
+  assert.notEqual(state.workspace_path,state.reviewer_workspace_path); assert.equal(state.evidence[0].input_hash,state.evidence[1].input_hash);
+});
+test('reviewer mutation is rejected even when reviewer returns APPROVE',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-review-mutate-')); const source=makeSourceRepo();
+  const worker=path.join(cwd,'worker.mjs');
+  fs.writeFileSync(worker,"import fs from 'node:fs';const p=process.argv.at(-1)||'';if(p.includes('You are the Reviewer')){fs.writeFileSync('src/review.txt','mutated\\n');console.log(JSON.stringify({decision:'APPROVE',reason:'looks good',residual_risks:[]}));}else{fs.writeFileSync('src/value.txt','after\\n');console.log('changed');}\n");
+  const localTask=path.join(cwd,'task.json'); const spec=realTask(source,'generic','generic'); fs.writeFileSync(localTask,JSON.stringify(spec,null,2));
+  const env=baseEnv(cwd,{BOUNDED_AGENT_GENERIC_EXECUTABLE:process.execPath,BOUNDED_AGENT_GENERIC_ARGS_JSON:JSON.stringify([worker])});
+  assert.equal(run(['init',localTask],cwd,env).status,0); const result=run(['run'],cwd,env);
+  assert.notEqual(result.status,0); assert.match(result.stderr,/REVIEWER_MUTATED_WORKSPACE/);
+});
+test('controller-observed verification runs on disposable candidate copy and becomes evidence',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-verify-pass-')); const source=makeSourceRepo();
+  const worker=path.join(cwd,'worker.mjs'); fs.writeFileSync(worker,"import fs from 'node:fs';fs.writeFileSync('src/value.txt','after\\n');console.log('changed');\n");
+  const spec=realTask(source); spec.verification={commands:[{command:process.execPath,args:['-e',"const fs=require('fs');if(fs.readFileSync('src/value.txt','utf8').trim()!=='after')process.exit(7)"],timeout_seconds:20}]};
+  const localTask=path.join(cwd,'task.json'); fs.writeFileSync(localTask,JSON.stringify(spec,null,2));
+  const env=baseEnv(cwd,{BOUNDED_AGENT_GENERIC_EXECUTABLE:process.execPath,BOUNDED_AGENT_GENERIC_ARGS_JSON:JSON.stringify([worker])});
+  assert.equal(run(['init',localTask],cwd,env).status,0); const result=run(['run'],cwd,env); assert.equal(result.status,0,result.stderr);
+  const state=JSON.parse(fs.readFileSync(stateFor(cwd),'utf8')); const proof=state.evidence.find(x=>x.claim==='controller_verification');
+  assert.ok(proof); assert.equal(proof.status,'VALID'); assert.equal(state.state,'HUMAN_GATE');
+  const verifyDir=path.join(rootFor(cwd),'verification-work',state.task_id); assert.ok(fs.existsSync(verifyDir)); assert.notEqual(verifyDir,state.workspace_path); assert.notEqual(verifyDir,state.reviewer_workspace_path);
+});
+
+test('failed controller-observed verification blocks before review and Human Gate',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-verify-fail-')); const source=makeSourceRepo();
+  const worker=path.join(cwd,'worker.mjs'); fs.writeFileSync(worker,"import fs from 'node:fs';fs.writeFileSync('src/value.txt','after\\n');console.log('changed');\n");
+  const spec=realTask(source); spec.verification={commands:[{command:process.execPath,args:['-e','process.exit(9)'],timeout_seconds:20}]};
+  const localTask=path.join(cwd,'task.json'); fs.writeFileSync(localTask,JSON.stringify(spec,null,2));
+  const env=baseEnv(cwd,{BOUNDED_AGENT_GENERIC_EXECUTABLE:process.execPath,BOUNDED_AGENT_GENERIC_ARGS_JSON:JSON.stringify([worker])});
+  assert.equal(run(['init',localTask],cwd,env).status,0); const result=run(['run'],cwd,env);
+  assert.notEqual(result.status,0); assert.match(result.stderr,/VERIFICATION_FAILED/);
+  const state=JSON.parse(fs.readFileSync(stateFor(cwd),'utf8')); assert.equal(state.state,'TESTING'); assert.equal(state.evidence.some(x=>x.claim==='review_observation'),false);
+});
+
+test('protected authorization rejects uncommitted worktree drift after approval',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-dirty-auth-')); const keys=setupKeys(cwd);
+  assert.equal(run(['init',task],cwd,keys.env).status,0); assert.equal(run(['run'],cwd,keys.env).status,0);
+  const signed=spawnSync(process.execPath,[gate,'sign',path.join(keys.keyDir,'private.pem')],{cwd,encoding:'utf8',env:keys.env});
+  assert.equal(signed.status,0,signed.stderr); assert.equal(run(['approve',signed.stdout.trim()],cwd,keys.env).status,0);
+  const state=JSON.parse(fs.readFileSync(stateFor(cwd),'utf8'));
+  fs.writeFileSync(path.join(state.workspace_path,'demo-output','artifact.txt'),'dirty but same HEAD\n');
+  const auth=run(['authorize-protected','remote_mutation'],cwd,keys.env);
+  assert.notEqual(auth.status,0); assert.match(auth.stderr,/POST_TEST_WORKTREE_DIRTY/);
+});
+
+test('protected mode refuses local child-process agent adapters',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-protected-child-'));
+  const env={...baseEnv(cwd),BOUNDED_AGENT_PROTECTED_MODE:'1'};
+  assert.equal(run(['init',task],cwd,env).status,0);
+  const result=run(['run'],cwd,env);
+  assert.notEqual(result.status,0); assert.match(result.stderr,/PROTECTED_MODE_REQUIRES_ISOLATED_WORKER:builder:demo/);
+});
+
+
+test('controller lock serializes concurrent controllers and allows dead-owner takeover', async()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-lock-')), env=baseEnv(cwd);
+  assert.equal(run(['init',task],cwd,env).status,0);
+  const coreUrl=new URL('../runtime/core.mjs',import.meta.url).href;
+  const code=`import {acquireControllerLock} from ${JSON.stringify(coreUrl)}; acquireControllerLock(); console.log('LOCK_HELD'); setTimeout(()=>{},10000);`;
+  const holder=spawn(process.execPath,['--input-type=module','-e',code],{cwd,env,stdio:['ignore','pipe','pipe']});
+  await new Promise((resolve,reject)=>{let out=''; const timer=setTimeout(()=>reject(new Error('LOCK_HOLDER_TIMEOUT')),5000); holder.stdout.on('data',chunk=>{out+=chunk; if(out.includes('LOCK_HELD')){clearTimeout(timer);resolve();}}); holder.once('error',reject);});
+  const blocked=run(['recover'],cwd,env); assert.notEqual(blocked.status,0); assert.match(blocked.stderr,/CONTROLLER_LOCKED/);
+  holder.kill(); await new Promise(resolve=>holder.once('exit',resolve));
+  const takeover=run(['recover'],cwd,env); assert.equal(takeover.status,0,takeover.stderr); assert.match(takeover.stdout,/SAFE_RESUME/);
 });

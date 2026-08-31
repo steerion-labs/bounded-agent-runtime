@@ -19,7 +19,7 @@ Task Intake
   -> Builder receives bounded workspace capability
   -> Verifier tests exact candidate
   -> Controller validates evidence
-  -> Reviewer independently inspects exact candidate
+  -> Separate Reviewer execution inspects the exact candidate; BAR does not infer organizational/model independence
   -> Controller validates review
   -> Human Gate for protected transition
   -> Controller performs allowed mutation

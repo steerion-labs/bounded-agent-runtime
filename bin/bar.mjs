@@ -1,0 +1,140 @@
+#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { STATE_FILE, readJson } from '../runtime/core.mjs';
+import { doctorReport, formatDoctor } from '../runtime/doctor.mjs';
+import { adapterDefinitions, assertAdapterName } from '../runtime/adapters/registry.mjs';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(here, '..');
+const argv = process.argv.slice(2);
+const command = argv.shift();
+
+function option(name, fallback = null) {
+  const index = argv.indexOf(name);
+  if (index < 0) return fallback;
+  const value = argv[index + 1];
+  if (value === undefined || value.startsWith('--')) throw new Error(`OPTION_VALUE_REQUIRED:${name}`);
+  return value;
+}
+function has(name) { return argv.includes(name); }
+function canonical(value) { if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']'; if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key)+':'+canonical(value[key])).join(',') + '}'; return JSON.stringify(value); }
+function options(name) { const values=[]; for(let i=0;i<argv.length;i+=1) if(argv[i]===name){ const value=argv[i+1]; if(value===undefined||value.startsWith('--')) throw new Error(`OPTION_VALUE_REQUIRED:${name}`); values.push(value); } return values; }
+function controller(args) {
+  const result = spawnSync(process.execPath, [path.join(root, 'runtime', 'controller.mjs'), ...args], { stdio: 'inherit', env: process.env, windowsHide: true });
+  if (result.status !== 0) throw new Error(`CONTROLLER_EXIT:${result.status}`);
+}
+function git(repo, args) {
+  const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', windowsHide: true });
+  if (result.status !== 0) throw new Error(`GIT_FAILED:${String(result.stderr || '').trim()}`);
+  return String(result.stdout || '').trim();
+}
+function resolveContainerImage(image) {
+  const r=spawnSync('docker',['image','inspect',image,'--format','{{json .RepoDigests}}'],{encoding:'utf8',windowsHide:true});
+  if(r.status!==0) throw new Error(`CONTAINER_IMAGE_NOT_LOCAL:${image}:pull it explicitly before task creation`);
+  let digests=[]; try{digests=JSON.parse(String(r.stdout||'[]').trim()||'[]')}catch{}
+  const digest=digests.find(x=>typeof x==='string'&&x.includes('@sha256:'));
+  if(!digest) throw new Error(`CONTAINER_IMAGE_DIGEST_REQUIRED:${image}`);
+  return digest;
+}
+function workerSpec(role, adapter) {
+  const model=option(`--${role}-model`);
+  if(adapter!=='container') return {adapter,...(model?{model}:{})};
+  const requested=option(`--${role}-image`), command=option(`--${role}-command`);
+  if(!requested||!command) throw new Error(`CONTAINER_CONFIG_REQUIRED:${role}:use --${role}-image and --${role}-command`);
+  const image=requested.includes('@sha256:')?requested:resolveContainerImage(requested);
+  return {adapter,image,command,args:options(`--${role}-arg`),...(option(`--${role}-memory`)?{memory:option(`--${role}-memory`)}:{}),...(option(`--${role}-cpus`)?{cpus:option(`--${role}-cpus`)}:{})};
+}
+
+function generateTask() {
+  const repoArg = option('--repo'); const intent = option('--intent');
+  if (!repoArg || !intent) throw new Error('USAGE:bar task --repo <git-repo> --intent <text> [--builder codex] [--reviewer claude] [--verify npm --verify-arg test] [--out task.json]');
+  const repo = path.resolve(repoArg); const top = git(repo, ['rev-parse','--show-toplevel']);
+  if (git(top, ['status','--porcelain=v1','--untracked-files=all'])) throw new Error('SOURCE_REPO_DIRTY:commit or stash changes before creating a bounded task');
+  const builder = option('--builder', 'demo'); const reviewer = option('--reviewer', 'demo');
+  assertAdapterName(builder, 'builder'); assertAdapterName(reviewer, 'reviewer');
+  const repoEntries = git(top, ['ls-tree','--name-only','HEAD']).split(/\r?\n/).filter(Boolean);
+  if (!repoEntries.length) throw new Error('SOURCE_REPO_EMPTY');
+  let entries = options('--allow').map(value=>value.replaceAll('\\','/').replace(/^\.\//,'').replace(/\/$/,''));
+  if (has('--allow-all')) entries=[...repoEntries];
+  if (!entries.length) throw new Error('ALLOWED_PATH_REQUIRED:use --allow <path> (repeatable) or explicit --allow-all');
+  if (builder === 'demo' && !entries.includes('demo-output')) entries.push('demo-output');
+  const task = {
+    schema_version: 1,
+    task_id: option('--id', `bar-${Date.now()}`),
+    intent,
+    source: { kind: 'local_git', path: top, ref: git(top, ['rev-parse','HEAD']) },
+    workers: {
+      builder: workerSpec('builder',builder),
+      reviewer: workerSpec('reviewer',reviewer)
+    },
+    allowed_actions: ['build_local','merge'],
+    protected_actions: ['merge'],
+    allowed_paths: entries,
+    budget: { model_calls: 4, wall_clock_seconds: Number(option('--seconds', '900')), retries: 1 },
+    ...(option('--verify') ? { verification: { commands: [{ command: option('--verify'), args: options('--verify-arg'), timeout_seconds: Number(option('--verify-timeout', '120')) }] } } : {})
+  };
+  const out = path.resolve(option('--out', 'bounded-task.json'));
+  fs.writeFileSync(out, JSON.stringify(task, null, 2) + '\n', 'utf8');
+  console.log(`TASK_WRITTEN ${out}`);
+}
+function showStatus(asJson = false) {
+  if (!fs.existsSync(STATE_FILE)) {
+    const empty = { initialized: false, state: 'NOT_INITIALIZED' };
+    console.log(asJson ? JSON.stringify(empty, null, 2) : 'NOT_INITIALIZED'); return;
+  }
+  const state = readJson(STATE_FILE);
+  const view = {
+    initialized: true, task_id: state.task_id, state: state.state, state_version: state.state_version,
+    candidate_sha: state.candidate_sha, tree_hash: state.tree_hash,
+    builder_adapter: state.task?.workers?.builder?.adapter || 'demo',
+    reviewer_adapter: state.task?.workers?.reviewer?.adapter || 'demo',
+    evidence_count: state.evidence?.length || 0,
+    human_gate_required: state.state === 'HUMAN_GATE', human_approval: Boolean(state.human_approval)
+  };
+  console.log(asJson ? JSON.stringify(view, null, 2) : Object.entries(view).map(([k,v]) => `${k}: ${v}`).join('\n'));
+}
+function help() {
+  console.log(`Bounded Agent Runtime CLI\n\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder codex] [--reviewer claude] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action>\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
+}
+
+try {
+  if (!command || command === 'help' || command === '--help' || command === '-h') help();
+  else if (command === 'doctor') { const report = doctorReport(); console.log(has('--json') ? JSON.stringify(report, null, 2) : formatDoctor(report)); if (report.status === 'FAIL') process.exitCode = 1; }
+  else if (command === 'agents') { const agents = doctorReport().agents; console.log(has('--json') ? JSON.stringify(agents, null, 2) : Object.entries(agents).map(([n,a]) => `${a.installed ? 'OK' : '--'} ${n.padEnd(12)} ${a.roles.join('/')} ${a.executable || 'not found'}`).join('\n')); }
+  else if (command === 'task') generateTask();
+  else if (command === 'run') { const task = option('--task'); if (!fs.existsSync(STATE_FILE)) { if (!task) throw new Error('TASK_FILE_REQUIRED'); controller(['init', path.resolve(task)]); } else if (task) { const requested=readJson(path.resolve(task)); const current=readJson(STATE_FILE); if(requested.task_id!==current.task_id) throw new Error(`RUNTIME_ALREADY_INITIALIZED_FOR:${current.task_id}:run bar reset before another task`); if(canonical(requested)!==canonical(current.task)) throw new Error('TASK_FILE_MISMATCH:the supplied task differs from persisted authority'); } controller(['run']); }
+  else if (command === 'status') showStatus(has('--json'));
+  else if (command === 'recover') controller(['recover']);
+  else if (command === 'reset') controller(['reset']);
+  else if (command === 'gate' && argv[0] === 'keygen') { const dir=argv[1] || '.human-gate'; const result=spawnSync(process.execPath,[path.join(root,'runtime','gate.mjs'),'keygen',path.resolve(dir)],{stdio:'inherit',env:process.env,windowsHide:true}); if(result.status!==0) throw new Error(`GATE_EXIT:${result.status}`); }
+  else if (command === 'gate' && argv[0] === 'sign') { const key=argv[1]; if(!key) throw new Error('PRIVATE_KEY_REQUIRED'); const result=spawnSync(process.execPath,[path.join(root,'runtime','gate.mjs'),'sign',path.resolve(key)],{stdio:'inherit',env:process.env,windowsHide:true}); if(result.status!==0) throw new Error(`GATE_EXIT:${result.status}`); }
+  else if (command === 'approve') { const signature=argv[0]; if(!signature) throw new Error('APPROVAL_SIGNATURE_REQUIRED'); controller(['approve',signature]); }
+  else if (command === 'authorize') { const action=argv[0]; if(!action) throw new Error('PROTECTED_ACTION_REQUIRED'); controller(['authorize-protected',action]); }
+  else if (command === 'dashboard') {
+    const { createDashboardServer } = await import('../runtime/dashboard.mjs'); const port = Number(option('--port', '4780'));
+    createDashboardServer({ port }); console.log(`BAR_DASHBOARD http://127.0.0.1:${port}`);
+  }
+  else if (command === 'mcp') { const { startStdioMcp } = await import('../runtime/mcp-server.mjs'); startStdioMcp(); }
+  else if (command === 'net' && argv[0] === 'check') {
+    const { readNetworkPolicy, checkNetworkTarget } = await import('../runtime/network-policy.mjs'); const policyFile = option('--policy'); const target = argv[1];
+    if (!policyFile || !target) throw new Error('USAGE:bar net check <url> --policy <file>');
+    const checked = await checkNetworkTarget(target, readNetworkPolicy(path.resolve(policyFile))); console.log(JSON.stringify({ allowed: true, host: checked.url.hostname, addresses: checked.addresses }, null, 2));
+  }
+  else if (command === 'secret' && argv[0] === 'set') {
+    const { setBrokerSecret } = await import('../runtime/broker.mjs'); const name = argv[1]; if (!name) throw new Error('SECRET_NAME_REQUIRED');
+    const envName = option('--from-env'); let value;
+    if (envName) value = process.env[envName]; else { if (process.stdin.isTTY) throw new Error('SECRET_STDIN_REQUIRED:pipe the secret or use --from-env'); value = fs.readFileSync(0, 'utf8').replace(/[\r\n]+$/, ''); }
+    setBrokerSecret(name, value); console.log(`SECRET_STORED ${name}`);
+  }
+  else if (command === 'secret' && argv[0] === 'list') { const { listBrokerSecrets } = await import('../runtime/broker.mjs'); console.log(listBrokerSecrets().join('\n')); }
+  else if (command === 'broker' && argv[0] === 'request') {
+    const { readNetworkPolicy } = await import('../runtime/network-policy.mjs'); const { brokerRequest } = await import('../runtime/broker.mjs');
+    const target = argv[1], policyFile = option('--policy'); if (!target || !policyFile) throw new Error('USAGE:bar broker request <url> --policy <file>');
+    const bodyFile = option('--body-file'); const response = await brokerRequest({ url: target, method: option('--method', 'GET'), body: bodyFile ? fs.readFileSync(path.resolve(bodyFile)) : null, policy: readNetworkPolicy(path.resolve(policyFile)) });
+    console.log(JSON.stringify(response, null, 2));
+  }
+  else throw new Error(`UNKNOWN_COMMAND:${command}`);
+} catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; }

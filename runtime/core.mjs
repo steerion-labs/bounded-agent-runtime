@@ -5,22 +5,27 @@ import { execFileSync } from 'node:child_process';
 import { assertTransition } from './state-machine.mjs';
 
 export const RUNTIME_ROOT = path.resolve(process.env.BOUNDED_AGENT_RUNTIME_ROOT || '.bounded-agent');
+export const CORE_DIR = path.join(RUNTIME_ROOT, 'runtime-core');
 export const STATE_DIR = path.join(RUNTIME_ROOT, 'runtime-state');
 export const JOURNAL_DIR = path.join(RUNTIME_ROOT, 'journal');
 export const SECRETS_DIR = path.join(RUNTIME_ROOT, 'secrets');
 export const EVIDENCE_DIR = path.join(RUNTIME_ROOT, 'evidence');
 export const BUILDER_DIR = path.join(RUNTIME_ROOT, 'builder-work');
 export const REVIEWER_DIR = path.join(RUNTIME_ROOT, 'reviewer-work');
+export const VERIFICATION_DIR = path.join(RUNTIME_ROOT, 'verification-work');
 export const STATE_FILE = path.join(STATE_DIR, 'state.json');
 export const JOURNAL_FILE = path.join(JOURNAL_DIR, 'journal.jsonl');
 const JOURNAL_KEY_FILE = path.join(SECRETS_DIR, 'journal-hmac.key');
 const JOURNAL_ANCHOR_FILE = path.join(SECRETS_DIR, 'journal-anchor.json');
 const NONCE_LEDGER_FILE = path.join(SECRETS_DIR, 'human-gate-nonces.json');
+const CONTROLLER_LOCK_DIR = path.join(CORE_DIR, 'controller-lock');
+const CONTROLLER_LOCK_OWNER = path.join(CONTROLLER_LOCK_DIR, 'owner.json');
+let SAFE_HOOKS_DIR = null;
 
 export const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 const hmac256 = (key, value) => crypto.createHmac('sha256', key).update(value).digest('hex');
 export function ensureRuntimeDir() {
-  for (const dir of [STATE_DIR, JOURNAL_DIR, SECRETS_DIR, EVIDENCE_DIR, BUILDER_DIR, REVIEWER_DIR]) fs.mkdirSync(dir, { recursive: true });
+  for (const dir of [CORE_DIR, STATE_DIR, JOURNAL_DIR, SECRETS_DIR, EVIDENCE_DIR, BUILDER_DIR, REVIEWER_DIR, VERIFICATION_DIR]) fs.mkdirSync(dir, { recursive: true });
 }
 export function assertProtectedRootConfigured() {
   if (process.env.BOUNDED_AGENT_PROTECTED_MODE !== '1') return 'DEMO_MODE';
@@ -29,6 +34,43 @@ export function assertProtectedRootConfigured() {
 }
 export function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+}
+function processAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error?.code === 'EPERM'; }
+}
+function lockOwner() {
+  try { return readJson(CONTROLLER_LOCK_OWNER); } catch { return null; }
+}
+export function acquireControllerLock({ staleMs = 30000 } = {}) {
+  fs.mkdirSync(CORE_DIR, { recursive: true });
+  const token = crypto.randomUUID();
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      fs.mkdirSync(CONTROLLER_LOCK_DIR);
+      fs.writeFileSync(CONTROLLER_LOCK_OWNER, JSON.stringify({ pid: process.pid, token, created_at: new Date().toISOString() }) + '\n', { flag: 'wx', mode: 0o600 });
+      return { pid: process.pid, token };
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      const owner = lockOwner(); let age = 0; try { age = Date.now() - fs.statSync(CONTROLLER_LOCK_DIR).mtimeMs; } catch {}
+      if ((owner?.pid && processAlive(owner.pid)) || (!owner && age < staleMs)) throw new Error(`CONTROLLER_LOCKED:${owner?.pid ?? 'unknown'}`);
+      const tomb = `${CONTROLLER_LOCK_DIR}.stale.${crypto.randomUUID()}`;
+      try { fs.renameSync(CONTROLLER_LOCK_DIR, tomb); fs.rmSync(tomb, { recursive: true, force: true }); } catch { if (attempt === 3) throw new Error('CONTROLLER_LOCK_TAKEOVER_FAILED'); }
+    }
+  }
+  throw new Error('CONTROLLER_LOCK_ACQUIRE_FAILED');
+}
+export function cleanupControllerHooks() {
+  if (!SAFE_HOOKS_DIR) return;
+  fs.rmSync(SAFE_HOOKS_DIR, { recursive: true, force: true });
+  SAFE_HOOKS_DIR = null;
+}
+export function releaseControllerLock(lock) {
+  if (!lock) return;
+  const owner = lockOwner();
+  if (!owner || owner.pid !== lock.pid || owner.token !== lock.token) throw new Error('CONTROLLER_LOCK_OWNERSHIP_LOST');
+  fs.rmSync(CONTROLLER_LOCK_DIR, { recursive: true, force: false });
 }
 function writeAtomic(file, text, mode = 0o600) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -142,6 +184,14 @@ export function assertCurrentLease(localState) {
   if (persisted.lease.generation !== localState.lease.generation) throw new Error('STALE_CONTROLLER_GENERATION');
   if (persisted.lease.fencing_token !== localState.lease.fencing_token) throw new Error('STALE_CONTROLLER_FENCE');
 }
+export function claimControllerLease(state) {
+  const prior = Number.isSafeInteger(state.lease?.generation) ? state.lease.generation : 0;
+  const wallMs = Number.isFinite(state.budget?.limits?.wall_clock_seconds) ? state.budget.limits.wall_clock_seconds * 1000 : 0;
+  state.lease = newLease(state.task_id, Math.max(300000, wallMs + 60000), prior + 1);
+  saveState(state);
+  journal('LEASE_ACQUIRED', { task_id: state.task_id, generation: state.lease.generation, owner: state.lease.owner, expires_at: state.lease.expires_at });
+  return state.lease;
+}
 export function assertBudget(state, delta = {}) {
   const wall = state.budget?.limits?.wall_clock_seconds;
   if (state.started_at && Number.isFinite(wall) && Date.now() - Date.parse(state.started_at) > wall * 1000) throw new Error('BUDGET_EXCEEDED:wall_clock_seconds');
@@ -161,10 +211,51 @@ export function remainingWallClockMs(state) {
 export function validateTask(task) {
   for (const key of ['schema_version','task_id','intent','allowed_actions','allowed_paths','budget','protected_actions']) if (task[key] === undefined) throw new Error(`TASK_FIELD_MISSING:${key}`);
   if (!Array.isArray(task.allowed_actions) || !Array.isArray(task.allowed_paths) || !Array.isArray(task.protected_actions)) throw new Error('TASK_ARRAY_INVALID');
+  if (typeof task.task_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(task.task_id)) throw new Error('TASK_ID_INVALID');
+  if (!task.allowed_paths.length) throw new Error('TASK_ALLOWED_PATHS_EMPTY');
+  for (const item of task.allowed_paths) {
+    if (typeof item !== 'string' || !item.trim() || path.isAbsolute(item)) throw new Error(`TASK_ALLOWED_PATH_INVALID:${item}`);
+    const normalized = item.replace(/\\/g,'/').replace(/^\.\//,'').replace(/\/$/,'');
+    if (!normalized || normalized === '.git' || normalized.startsWith('.git/') || normalized.split('/').includes('..')) throw new Error(`TASK_ALLOWED_PATH_INVALID:${item}`);
+  }
   for (const key of ['model_calls','wall_clock_seconds','retries']) if (!Number.isFinite(task.budget[key]) || task.budget[key] < 0) throw new Error(`TASK_BUDGET_INVALID:${key}`);
   for (const action of task.protected_actions) if (!task.allowed_actions.includes(action)) throw new Error(`PROTECTED_ACTION_NOT_ALLOWED:${action}`);
+  if (task.source !== undefined) {
+    if (task.source?.kind !== 'local_git' || typeof task.source.path !== 'string' || !path.isAbsolute(task.source.path)) throw new Error('TASK_SOURCE_INVALID');
+    if (task.source.ref !== undefined && (typeof task.source.ref !== 'string' || !task.source.ref.trim() || task.source.ref.startsWith('-'))) throw new Error('TASK_SOURCE_REF_INVALID');
+  }
+  if (task.verification !== undefined) {
+    if (!Array.isArray(task.verification?.commands)) throw new Error('TASK_VERIFICATION_INVALID');
+    if (task.verification.commands.length > 20) throw new Error('TASK_VERIFICATION_TOO_MANY_COMMANDS');
+    for (const item of task.verification.commands) {
+      if (!item || typeof item.command !== 'string' || !item.command.trim() || !Array.isArray(item.args) || item.args.some(x => typeof x !== 'string')) throw new Error('TASK_VERIFICATION_COMMAND_INVALID');
+      if (item.timeout_seconds !== undefined && (!Number.isFinite(item.timeout_seconds) || item.timeout_seconds <= 0 || item.timeout_seconds > 1800)) throw new Error('TASK_VERIFICATION_TIMEOUT_INVALID');
+    }
+  }
+  if (task.workers !== undefined) {
+    for (const role of ['builder','reviewer']) {
+      const worker = task.workers?.[role];
+      if (!worker || typeof worker.adapter !== 'string') throw new Error(`TASK_WORKER_INVALID:${role}`);
+      if (worker.model !== undefined && typeof worker.model !== 'string') throw new Error(`TASK_WORKER_MODEL_INVALID:${role}`);
+      if (worker.adapter === 'container') {
+        if (typeof worker.image !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,255}$/.test(worker.image)) throw new Error(`TASK_CONTAINER_IMAGE_INVALID:${role}`);
+        if (!/@sha256:[a-f0-9]{64}$/.test(worker.image)) throw new Error(`TASK_CONTAINER_IMAGE_DIGEST_REQUIRED:${role}`);
+        if (typeof worker.command !== 'string' || !worker.command || worker.command.startsWith('-')) throw new Error(`TASK_CONTAINER_COMMAND_INVALID:${role}`);
+        if (worker.args !== undefined && (!Array.isArray(worker.args) || worker.args.some(x => typeof x !== 'string')) ) throw new Error(`TASK_CONTAINER_ARGS_INVALID:${role}`);
+      }
+    }
+  }
   return task;
 }
+export function assertWorkerExecutionBoundary(adapter, role, protectedMode = process.env.BOUNDED_AGENT_PROTECTED_MODE === '1') {
+  if (protectedMode && adapter !== 'container') throw new Error(`PROTECTED_MODE_REQUIRES_ISOLATED_WORKER:${role}:${adapter}`);
+  return true;
+}
+export function assertVerificationExecutionBoundary(commandCount, protectedMode = process.env.BOUNDED_AGENT_PROTECTED_MODE === '1') {
+  if (protectedMode && commandCount > 0) throw new Error('PROTECTED_MODE_LOCAL_VERIFIER_DENIED');
+  return true;
+}
+
 export function authorize(task, action) {
   if (!task.allowed_actions.includes(action)) throw new Error(`CAPABILITY_DENIED:${action}`);
   if (task.protected_actions.includes(action)) return 'HUMAN_GATE';
@@ -211,12 +302,51 @@ function safeGitEnv(extra = {}) {
   return { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null', GIT_TERMINAL_PROMPT: '0', ...extra };
 }
 
+function controllerHooksPath() {
+  if (!SAFE_HOOKS_DIR) {
+    fs.mkdirSync(CORE_DIR, { recursive: true });
+    SAFE_HOOKS_DIR = fs.mkdtempSync(path.join(CORE_DIR, 'disabled-hooks-'));
+  }
+  return SAFE_HOOKS_DIR;
+}
 export function gitExec(repo, args, { timeout = 10000, stdio = ['ignore','pipe','pipe'], trim = true } = {}) {
-  const hookPath = path.join(repo, '.disabled-hooks');
+  const hookPath = controllerHooksPath();
   const output = execFileSync('git', ['-c', `core.hooksPath=${hookPath}`, '-c', 'protocol.file.allow=never', '-C', repo, ...args],
     { encoding: 'utf8', timeout, env: safeGitEnv(), stdio });
+  if (output == null) return '';
   return trim ? output.trim() : output.replace(/[\r\n]+$/, '');
 }
+export function seedLocalGitWorkspace(source, workspace) {
+  if (!source || source.kind !== 'local_git' || typeof source.path !== 'string' || !path.isAbsolute(source.path)) throw new Error('TASK_SOURCE_INVALID');
+  const sourcePath = fs.realpathSync(source.path);
+  if (!fs.statSync(sourcePath).isDirectory()) throw new Error('TASK_SOURCE_NOT_DIRECTORY');
+  try { gitExec(sourcePath, ['rev-parse','--is-inside-work-tree'], { stdio: 'ignore' }); }
+  catch { throw new Error('TASK_SOURCE_NOT_GIT_REPO'); }
+  fs.rmSync(workspace, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(workspace), { recursive: true });
+  execFileSync('git', ['-c','protocol.file.allow=always','clone','-q','--no-hardlinks','--no-checkout',sourcePath,workspace], { timeout: 30000, env: safeGitEnv(), stdio: ['ignore','pipe','pipe'] });
+  const ref = source.ref || 'HEAD';
+  gitExec(workspace, ['checkout','-q','--detach',ref], { timeout: 20000 });
+  gitExec(workspace, ['config','core.autocrlf','false']);
+  gitExec(workspace, ['config','user.name','Bounded Agent Builder']);
+  gitExec(workspace, ['config','user.email','builder@invalid.example']);
+  const base = gitIdentity(workspace);
+  assertWorkspaceTreeSafe(workspace);
+  return { base_sha: base.candidate_sha, base_tree_hash: base.tree_hash, source_path: sourcePath, source_ref: ref };
+}
+
+export function cloneCandidateWorkspace(builderWorkspace, targetWorkspace, candidateSha) {
+  fs.rmSync(targetWorkspace, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(targetWorkspace), { recursive: true });
+  execFileSync('git', ['-c','protocol.file.allow=always','clone','-q','--no-hardlinks','--no-checkout',builderWorkspace,targetWorkspace], { timeout: 30000, env: safeGitEnv(), stdio: ['ignore','pipe','pipe'] });
+  gitExec(targetWorkspace, ['checkout','-q','--detach',candidateSha], { timeout: 20000 });
+  assertWorkspaceTreeSafe(targetWorkspace);
+  return gitIdentity(targetWorkspace);
+}
+export function cloneReviewerWorkspace(builderWorkspace, reviewerWorkspace, candidateSha) {
+  return cloneCandidateWorkspace(builderWorkspace, reviewerWorkspace, candidateSha);
+}
+
 export function ensureGitRepo(repo) {
   fs.mkdirSync(repo, { recursive: true });
   try { gitExec(repo, ['rev-parse','--git-dir'], { stdio: 'ignore' }); }
@@ -232,8 +362,10 @@ export function changedWorkspacePaths(repo) {
 }
 function assertWorkspacePathSafe(repo, relativePath) {
   const root = fs.realpathSync(repo); let current = root;
-  for (const part of relativePath.replace(/\\/g, '/').split('/').filter(Boolean)) {
-    current = path.join(current, part); const info = fs.lstatSync(current);
+  for (const part of relativePath.replaceAll(String.fromCharCode(92), '/').split('/').filter(Boolean)) {
+    current = path.join(current, part);
+    if (!fs.existsSync(current)) return true;
+    const info = fs.lstatSync(current);
     if (info.isSymbolicLink()) throw new Error('WORKSPACE_LINK_DENIED:' + relativePath);
   }
   const resolved = fs.realpathSync(current);
@@ -256,16 +388,28 @@ export function assertWorkspaceIdentity(state, repo) {
   const current = gitIdentity(repo);
   if (current.candidate_sha !== state.candidate_sha) throw new Error('POST_TEST_CANDIDATE_DRIFT');
   if (current.tree_hash !== state.tree_hash) throw new Error('POST_TEST_TREE_DRIFT');
+  if (changedWorkspacePaths(repo).length) throw new Error('POST_TEST_WORKTREE_DIRTY');
   return true;
 }
-export function assertWorkspaceScope(task, repo) {
-  const rows = gitExec(repo, ['ls-tree','-r','HEAD']).split(/\r?\n/).filter(Boolean);
+function splitLines(value) {
+  return String(value).split(String.fromCharCode(10)).map(line => line.endsWith(String.fromCharCode(13)) ? line.slice(0, -1) : line).filter(Boolean);
+}
+export function assertWorkspaceTreeSafe(repo) {
+  const rows = splitLines(gitExec(repo, ['ls-tree','-r','HEAD']));
   const files = [];
   for (const row of rows) {
-    const tab = row.indexOf('	'); const meta = row.slice(0, tab); const file = row.slice(tab + 1);
-    const mode = meta.split(' ')[0]; if (mode === '120000') throw new Error('WORKSPACE_GIT_SYMLINK_DENIED:' + file);
-    assertAllowedPath(task, file); files.push(file);
+    const tab = row.indexOf(String.fromCharCode(9)); const meta = row.slice(0, tab); const file = row.slice(tab + 1);
+    const mode = meta.split(' ')[0];
+    if (mode === '120000') throw new Error('WORKSPACE_GIT_SYMLINK_DENIED:' + file);
+    if (fs.existsSync(path.join(repo, file))) assertWorkspacePathSafe(repo, file);
+    files.push(file);
   }
+  return files;
+}
+export function assertWorkspaceScope(task, repo, baseSha = null) {
+  const treeFiles = assertWorkspaceTreeSafe(repo);
+  const files = baseSha ? splitLines(gitExec(repo, ['diff','--name-only','--diff-filter=ACMRD',`${baseSha}..HEAD`])) : treeFiles;
+  for (const file of files) assertAllowedPath(task, file);
   return files;
 }
 export function publicKeyFingerprint(publicKeyPem) {
@@ -358,7 +502,7 @@ export function assertHumanApproval(state, action) {
 }
 export function resetDemoRuntime() {
   if (process.env.BOUNDED_AGENT_PROTECTED_MODE === '1') throw new Error('RESET_FORBIDDEN_IN_PROTECTED_MODE');
-  for (const dir of [STATE_DIR, JOURNAL_DIR, EVIDENCE_DIR, BUILDER_DIR, REVIEWER_DIR]) fs.rmSync(dir, { recursive: true, force: true });
+  for (const dir of [STATE_DIR, JOURNAL_DIR, EVIDENCE_DIR, BUILDER_DIR, REVIEWER_DIR, VERIFICATION_DIR]) fs.rmSync(dir, { recursive: true, force: true });
   fs.rmSync(JOURNAL_ANCHOR_FILE, { force: true });
   ensureRuntimeDir();
   return 'DEMO_RUNTIME_RESET';
