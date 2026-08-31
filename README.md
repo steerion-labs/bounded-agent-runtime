@@ -9,7 +9,7 @@
 [![Release](https://img.shields.io/github/v/release/steerion-labs/bounded-agent-runtime?label=release)](https://github.com/steerion-labs/bounded-agent-runtime/releases)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933.svg)](docs/00-PREREQUISITES.md)
-[![Security](https://img.shields.io/badge/security-fail--closed-success.svg)](SECURITY.md)
+[![Security model](https://img.shields.io/badge/security-model-informational.svg)](SECURITY.md)
 
 **Five-minute proof:**
 
@@ -65,7 +65,7 @@ flowchart LR
     T[Task + explicit authority] --> C[Deterministic Controller]
     C --> B[Builder Agent]
     B --> G[Controller-owned candidate]
-    G --> V[Independent Verification]
+    G --> V[Controller-observed Verification]
     V --> R[Separate Reviewer]
     R --> E[Evidence re-check]
     E --> H{Authenticated Human Gate}
@@ -80,7 +80,7 @@ flowchart LR
 
 **Builder and Reviewer can be different agents.** BAR owns the candidate identity and the evidence chain between them.
 
-The reference runtime intentionally performs **no real merge, deploy or release after authorization**. A side-effect adapter must be separately implemented and must re-check the protected authorization immediately before the effect.
+The reference runtime intentionally performs **no real merge, deploy or release after authorization**. Any future side-effect adapter must be implemented separately and re-check protected authorization immediately before the effect.
 
 ## Why this is different
 
@@ -92,17 +92,14 @@ Use the agent you already like. BAR focuses on the part agent frameworks should 
 
 - CLI for `doctor`, `quickstart`, `task`, `run`, `status`, recovery and Human Gate flows
 - first-party adapters for **Codex**, **Claude Code** and **OpenCode**
-- Ollama reviewer and generic command adapter
 - optional Docker Builder/Reviewer with `network none`
 - exact candidate commit + tree binding
-- controller-observed verification on disposable candidate copies
-- separate Reviewer workspace with mutation detection
+- controller-observed verification on a disposable candidate copy
+- separate Reviewer workspace with candidate-binding and mutation checks
 - signed Ed25519 Human Gate with pinned approver identity and replay protection
-- leases, fencing, retry/model/wall-clock budgets and authenticated journal chain
-- read-only MCP and loopback dashboard
-- optional HTTPS allowlist broker with controller-owned secret injection
-- Windows host-hardening scripts for separate role accounts, SID ACLs and real worker-token probes
-- adversarial tests for stale evidence, replay, path escape, hostile Git state and worker mutation
+- bounded retries/model calls/wall time plus authenticated journal state
+- read-only MCP observation surface
+- Windows host-hardening scripts for role accounts, SID ACLs and real worker-token probes
 
 ## Supported agents
 
