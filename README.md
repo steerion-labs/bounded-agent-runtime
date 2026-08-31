@@ -42,7 +42,7 @@ BAR separates those concerns.
 | Agent output can directly drive actions | Agent output remains untrusted input |
 | Effective scope can drift | Allowed paths and actions are task-bound |
 | Agent can inspect its own work | Reviewer is separate and candidate-bound |
-| â€œTests passedâ€ can be a claim | Verification becomes controller-observed evidence |
+| "Tests passed" can be a claim | Verification becomes controller-observed evidence |
 | Retry loops can run indefinitely | Calls, retries and wall time are budgeted |
 | Approval can go stale | Human Gate is exact-candidate and replay protected |
 | Tool access can imply permission | Capability never becomes authority |
@@ -108,12 +108,12 @@ Use the agent you already like. BAR focuses on the part agent frameworks should 
 
 | Adapter | Builder | Reviewer | Default boundary |
 | --- | ---: | ---: | --- |
-| Codex | âœ… | âœ… | workspace-write / read-only |
-| Claude Code | âœ… | âœ… | edit tools / plan + read |
-| OpenCode | âœ… | âœ… | pure mode, no auto-approve |
-| Ollama | â€” | âœ… | local reviewer |
-| Docker | âœ… | âœ… | disposable, network-none |
-| Generic command | âœ… | âœ… | bounded workspace + controller checks |
+| Codex | yes | yes | workspace-write / read-only |
+| Claude Code | yes | yes | edit tools / plan + read |
+| OpenCode | yes | yes | pure mode, no auto-approve |
+| Ollama | no | yes | local reviewer |
+| Docker | yes | yes | disposable, network-none |
+| Generic command | yes | yes | bounded workspace + controller checks |
 
 BAR deliberately avoids dangerous permission-bypass flags in its primary adapter defaults.
 
@@ -151,14 +151,14 @@ BAR includes Windows scripts that create and verify separate role accounts and S
 
 ```text
 C:\BoundedAgentRuntime
-â”œâ”€â”€ runtime-core       controller only
-â”œâ”€â”€ runtime-state      controller only
-â”œâ”€â”€ secrets            controller only
-â”œâ”€â”€ journal            controller only
-â”œâ”€â”€ verification-work  controller only
-â”œâ”€â”€ evidence           controlled evidence zone
-â”œâ”€â”€ builder-work       builder workspace
-â””â”€â”€ reviewer-work      reviewer workspace
+|-- runtime-core       controller only
+|-- runtime-state      controller only
+|-- secrets            controller only
+|-- journal            controller only
+|-- verification-work  controller only
+|-- evidence           controlled evidence zone
+|-- builder-work       builder workspace
+`-- reviewer-work      reviewer workspace
 ```
 
 Static ACL inspection is not treated as effective-access proof. `Test-WorkerAccess.ps1` launches probes under the actual Builder and Reviewer credentials.
