@@ -4,7 +4,7 @@
 
 **BAR is a model-agnostic security runtime for autonomous coding agents.** Codex, Claude Code, OpenCode, containers or your own agent can build and review code, while a deterministic controller keeps scope, evidence, budgets and protected-action authorization outside the LLM.
 
-> **Agents think. The controller authorizes. Evidence proves. Humans approve protected decisions.**
+> **Agents think. The controller authorizes. Evidence is verified. Humans approve protected decisions.**
 
 [![Release](https://img.shields.io/github/v/release/steerion-labs/bounded-agent-runtime?label=release)](https://github.com/steerion-labs/bounded-agent-runtime/releases)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -97,7 +97,7 @@ Use the agent you already like. BAR focuses on the part agent frameworks should 
 - controller-observed verification on a disposable candidate copy
 - separate Reviewer workspace with candidate-binding and mutation checks
 - signed Ed25519 Human Gate with pinned approver identity and replay protection
-- bounded retries/model calls/wall time plus authenticated journal state
+- bounded retries/model calls/wall time plus journal integrity checks
 - read-only MCP observation surface
 - Windows host-hardening scripts for role accounts, SID ACLs and real worker-token probes
 
@@ -108,9 +108,7 @@ Use the agent you already like. BAR focuses on the part agent frameworks should 
 | Codex | yes | yes | workspace-write / read-only |
 | Claude Code | yes | yes | edit tools / plan + read |
 | OpenCode | yes | yes | pure mode, no auto-approve |
-| Ollama | no | yes | local reviewer |
 | Docker | yes | yes | disposable, network-none |
-| Generic command | yes | yes | bounded workspace + controller checks |
 
 BAR deliberately avoids dangerous permission-bypass flags in its primary adapter defaults.
 
