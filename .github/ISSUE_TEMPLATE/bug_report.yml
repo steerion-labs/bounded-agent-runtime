@@ -1,0 +1,18 @@
+name: Bug report
+description: Report a reproducible BAR defect
+title: "bug: "
+body:
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Use synthetic data only. Include commands, expected result and actual result.
+    validations:
+      required: true
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Security boundary impact
+      description: Could this affect authority, evidence, credentials, isolation or Human Gate behavior?
+    validations:
+      required: true

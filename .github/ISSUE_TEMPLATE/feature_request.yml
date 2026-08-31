@@ -1,0 +1,24 @@
+name: Security-safe feature proposal
+description: Propose a feature without weakening BAR authority boundaries
+title: "feature: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+    validations:
+      required: true
+  - type: textarea
+    id: authority
+    attributes:
+      label: Authority and side-effect analysis
+      description: State what new capabilities are introduced and why they cannot bypass the controller or Human Gate.
+    validations:
+      required: true
+  - type: textarea
+    id: negative
+    attributes:
+      label: Negative tests
+      description: Describe fail-closed tests required for this change.
+    validations:
+      required: true
