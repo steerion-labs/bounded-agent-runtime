@@ -27,7 +27,7 @@ export function doctorReport() {
   const agents = {};
   for (const [name, def] of Object.entries(adapterDefinitions())) {
     const executable = name === 'generic' ? process.env.BOUNDED_AGENT_GENERIC_EXECUTABLE || null : (name === 'demo' ? process.execPath : findExecutable(def.executable));
-    agents[name] = { installed: Boolean(executable), executable, roles: def.roles };
+    agents[name] = { installed: Boolean(executable), executable, roles: def.roles, boundary: def.boundary || 'controller-enforced' };
   }
   checks.push(row('runtime_state', fs.existsSync(STATE_FILE), fs.existsSync(STATE_FILE) ? STATE_FILE : 'not initialized', 'advisory'));
   checks.push(row('secret_zone', fs.existsSync(SECRETS_DIR), fs.existsSync(SECRETS_DIR) ? SECRETS_DIR : 'created on first runtime use', 'advisory'));
@@ -48,7 +48,7 @@ export function formatDoctor(report) {
   const lines = [`Bounded Agent Runtime doctor: ${report.status}`, ''];
   for (const check of report.checks) lines.push(`${check.ok ? 'OK ' : '!! '} ${check.id.padEnd(16)} ${check.detail}`);
   lines.push('', 'Agent adapters:');
-  for (const [name, agent] of Object.entries(report.agents)) lines.push(`${agent.installed ? 'OK ' : '-- '} ${name.padEnd(12)} ${agent.roles.join('/')} ${agent.executable || 'not found'}`);
+  for (const [name, agent] of Object.entries(report.agents)) lines.push(`${agent.installed ? 'OK ' : '-- '} ${name.padEnd(12)} ${agent.roles.join('/')} ${agent.executable || 'not found'} | ${agent.boundary}`);
   if (!report.protected_mode) lines.push('', 'NOTE: Demo mode is convenient, not an OS isolation boundary. Use protected mode + worker identities before relying on host isolation.');
   return lines.join('\n');
 }

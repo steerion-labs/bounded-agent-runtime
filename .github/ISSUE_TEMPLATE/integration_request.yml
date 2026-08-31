@@ -1,0 +1,22 @@
+name: Agent integration request
+description: Propose a new coding-agent adapter
+title: "integration: "
+body:
+  - type: input
+    id: agent
+    attributes:
+      label: Agent / CLI
+    validations:
+      required: true
+  - type: textarea
+    id: automation
+    attributes:
+      label: Non-interactive invocation and least-privilege controls
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Bypass and credential risks
+    validations:
+      required: true

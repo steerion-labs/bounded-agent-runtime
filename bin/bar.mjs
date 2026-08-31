@@ -22,9 +22,10 @@ function option(name, fallback = null) {
 function has(name) { return argv.includes(name); }
 function canonical(value) { if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']'; if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key)+':'+canonical(value[key])).join(',') + '}'; return JSON.stringify(value); }
 function options(name) { const values=[]; for(let i=0;i<argv.length;i+=1) if(argv[i]===name){ const value=argv[i+1]; if(value===undefined||value.startsWith('--')) throw new Error(`OPTION_VALUE_REQUIRED:${name}`); values.push(value); } return values; }
-function controller(args) {
-  const result = spawnSync(process.execPath, [path.join(root, 'runtime', 'controller.mjs'), ...args], { stdio: 'inherit', env: process.env, windowsHide: true });
-  if (result.status !== 0) throw new Error(`CONTROLLER_EXIT:${result.status}`);
+function controller(args, { env = process.env, capture = false } = {}) {
+  const result = spawnSync(process.execPath, [path.join(root, 'runtime', 'controller.mjs'), ...args], { stdio: capture ? ['ignore','pipe','pipe'] : 'inherit', encoding: capture ? 'utf8' : undefined, env, windowsHide: true });
+  if (result.status !== 0) throw new Error(`CONTROLLER_EXIT:${result.status}:${String(result.stderr || '').trim()}`);
+  return result;
 }
 function git(repo, args) {
   const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', windowsHide: true });
@@ -80,30 +81,69 @@ function generateTask() {
   fs.writeFileSync(out, JSON.stringify(task, null, 2) + '\n', 'utf8');
   console.log(`TASK_WRITTEN ${out}`);
 }
+function nextStepFor(state) {
+  if (state === 'NOT_INITIALIZED') return 'Create a task with `bar task ...`, or run `bar quickstart`.';
+  if (state === 'HUMAN_GATE') return 'Review the evidence. Sign and approve only if this exact candidate is acceptable.';
+  if (state === 'ACCEPTED') return 'Protected authorization may now be checked with `bar authorize <action>`; BAR still performs no remote mutation.';
+  if (['REJECTED','FAILED'].includes(state)) return 'Inspect evidence, fix the source/task, then `bar reset` before retrying.';
+  return 'Run `bar run` to continue the bounded workflow, or `bar recover` after an interrupted controller.';
+}
 function showStatus(asJson = false) {
   if (!fs.existsSync(STATE_FILE)) {
-    const empty = { initialized: false, state: 'NOT_INITIALIZED' };
-    console.log(asJson ? JSON.stringify(empty, null, 2) : 'NOT_INITIALIZED'); return;
+    const empty = { initialized: false, state: 'NOT_INITIALIZED', next_step: nextStepFor('NOT_INITIALIZED') };
+    console.log(asJson ? JSON.stringify(empty, null, 2) : `BAR status\nState: NOT_INITIALIZED\nNext: ${empty.next_step}`); return;
   }
   const state = readJson(STATE_FILE);
   const view = {
     initialized: true, task_id: state.task_id, state: state.state, state_version: state.state_version,
     candidate_sha: state.candidate_sha, tree_hash: state.tree_hash,
-    builder_adapter: state.task?.workers?.builder?.adapter || 'demo',
-    reviewer_adapter: state.task?.workers?.reviewer?.adapter || 'demo',
-    evidence_count: state.evidence?.length || 0,
-    human_gate_required: state.state === 'HUMAN_GATE', human_approval: Boolean(state.human_approval)
+    builder_adapter: state.task?.workers?.builder?.adapter || 'demo', reviewer_adapter: state.task?.workers?.reviewer?.adapter || 'demo',
+    evidence_count: state.evidence?.length || 0, human_gate_required: state.state === 'HUMAN_GATE', human_approval: Boolean(state.human_approval),
+    next_step: nextStepFor(state.state)
   };
-  console.log(asJson ? JSON.stringify(view, null, 2) : Object.entries(view).map(([k,v]) => `${k}: ${v}`).join('\n'));
+  if (asJson) return console.log(JSON.stringify(view, null, 2));
+  console.log(['BAR status',`Task: ${view.task_id}`,`State: ${view.state}`,`Builder / Reviewer: ${view.builder_adapter} / ${view.reviewer_adapter}`,`Candidate: ${view.candidate_sha || 'not built yet'}`,`Evidence: ${view.evidence_count}`,`Human Gate: ${view.human_gate_required ? 'REQUIRED' : (view.human_approval ? 'APPROVED' : 'not reached')}`,`Next: ${view.next_step}`].join('\n'));
+}
+function quickstart() {
+  const report=doctorReport();
+  const failed=report.checks.filter(x=>x.severity==='required'&&!x.ok);
+  console.log('BAR 5-minute quickstart');
+  console.log('1/4 Prerequisites');
+  if(failed.length) throw new Error(`QUICKSTART_PREREQUISITE_FAILED:${failed.map(x=>x.id).join(',')}`);
+  console.log('    PASS Node 20+ and Git');
+  const demoRoot=fs.mkdtempSync(path.join(process.env.TEMP || process.env.TMP || process.cwd(),'bar-quickstart-'));
+  const env={...process.env,BOUNDED_AGENT_RUNTIME_ROOT:path.join(demoRoot,'runtime')};
+  try {
+    console.log('2/4 Initialize isolated synthetic task'); controller(['init',path.join(root,'examples','task.example.json')],{env,capture:true});
+    console.log('3/4 Run Builder, verification and Reviewer'); const result=controller(['run'],{env,capture:true});
+    const output=String(result.stdout||'')+String(result.stderr||''); if(!output.includes('HUMAN_GATE_REQUIRED')) throw new Error('QUICKSTART_EXPECTED_HUMAN_GATE_NOT_REACHED');
+    console.log('4/4 PASS: HUMAN_GATE_REQUIRED');
+    console.log('BAR stopped before any protected remote action. Next: create a real task with `bar task --repo ...`.');
+  } finally { fs.rmSync(demoRoot,{recursive:true,force:true}); }
+}
+function friendlyError(message) {
+  const guides=[
+    ['ALLOWED_PATH_REQUIRED','No write scope was granted. Add `--allow <path>` (repeatable) or explicitly use `--allow-all`.'],
+    ['SOURCE_REPO_DIRTY','The source repository has uncommitted changes. Commit or stash them, then retry.'],
+    ['TASK_FILE_REQUIRED','No task is initialized. Run `bar task ...` then `bar run --task <file>`, or try `bar quickstart`.'],
+    ['RUNTIME_ALREADY_INITIALIZED_FOR','BAR already owns another persisted task. Inspect `bar status`; use `bar reset` only when you intend to discard it.'],
+    ['TASK_FILE_MISMATCH','The supplied task differs from persisted authority. Do not overwrite authority in place; inspect status and reset deliberately.'],
+    ['ADAPTER_UNKNOWN','Unknown adapter. Run `bar agents` and see docs/19-ADAPTER-CONFORMANCE.md.'],
+    ['CONTROLLER_EXIT','The controller failed closed. Run `bar status` and `bar recover`; inspect the attached controller error before resetting.'],
+    ['QUICKSTART_PREREQUISITE_FAILED','A required prerequisite is missing. Run `bar doctor` for the exact check and install it before retrying.']
+  ];
+  const hit=guides.find(([prefix])=>message.startsWith(prefix));
+  return hit ? `${message}\nNEXT: ${hit[1]}` : message;
 }
 function help() {
-  console.log(`Bounded Agent Runtime CLI\n\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder codex] [--reviewer claude] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action>\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
+  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder codex] [--reviewer claude] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action>\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
 }
 
 try {
   if (!command || command === 'help' || command === '--help' || command === '-h') help();
+  else if (command === 'quickstart') quickstart();
   else if (command === 'doctor') { const report = doctorReport(); console.log(has('--json') ? JSON.stringify(report, null, 2) : formatDoctor(report)); if (report.status === 'FAIL') process.exitCode = 1; }
-  else if (command === 'agents') { const agents = doctorReport().agents; console.log(has('--json') ? JSON.stringify(agents, null, 2) : Object.entries(agents).map(([n,a]) => `${a.installed ? 'OK' : '--'} ${n.padEnd(12)} ${a.roles.join('/')} ${a.executable || 'not found'}`).join('\n')); }
+  else if (command === 'agents') { const agents = doctorReport().agents; console.log(has('--json') ? JSON.stringify(agents, null, 2) : Object.entries(agents).map(([n,a]) => `${a.installed ? 'OK' : '--'} ${n.padEnd(12)} ${a.roles.join('/')} ${a.executable || 'not found'} | ${a.boundary || 'controller-enforced'}`).join('\n')); }
   else if (command === 'task') generateTask();
   else if (command === 'run') { const task = option('--task'); if (!fs.existsSync(STATE_FILE)) { if (!task) throw new Error('TASK_FILE_REQUIRED'); controller(['init', path.resolve(task)]); } else if (task) { const requested=readJson(path.resolve(task)); const current=readJson(STATE_FILE); if(requested.task_id!==current.task_id) throw new Error(`RUNTIME_ALREADY_INITIALIZED_FOR:${current.task_id}:run bar reset before another task`); if(canonical(requested)!==canonical(current.task)) throw new Error('TASK_FILE_MISMATCH:the supplied task differs from persisted authority'); } controller(['run']); }
   else if (command === 'status') showStatus(has('--json'));
@@ -137,4 +177,4 @@ try {
     console.log(JSON.stringify(response, null, 2));
   }
   else throw new Error(`UNKNOWN_COMMAND:${command}`);
-} catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; }
+} catch (error) { const message=error instanceof Error ? error.message : String(error); console.error(friendlyError(message)); process.exitCode = 1; }

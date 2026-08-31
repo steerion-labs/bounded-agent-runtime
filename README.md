@@ -49,7 +49,7 @@ The reference runtime intentionally performs **no real merge, deploy or release*
 
 ## What ships in BAR
 
-- `bar` CLI with `doctor`, `agents`, `task`, `run`, `status`, recovery and Human Gate commands
+- `bar` CLI with guided `quickstart`, `doctor`, `agents`, `task`, `run`, readable `status`, recovery and Human Gate commands
 - first-party local CLI adapters for Codex, Claude Code and OpenCode
 - Ollama reviewer adapter and a generic command adapter
 - optional disposable Docker container Builder/Reviewer adapter
@@ -65,9 +65,11 @@ The reference runtime intentionally performs **no real merge, deploy or release*
 - Windows protected-mode scripts with role accounts, SID-based ACLs and real worker-token access probes
 - adversarial tests for state forgery, stale evidence, replay, Git hooks, path escapes and worker mutation
 
-## 5-minute start
+## Download and install
 
-Requirements: Node.js 20+ and Git. Docker and external agent CLIs are optional.
+Core requirements are **Node.js 20+ and Git**. Docker and external agent CLIs are optional and are not needed for the first demo.
+
+### Option A: Git clone
 
 ```powershell
 git clone https://github.com/steerion-labs/bounded-agent-runtime.git
@@ -75,21 +77,29 @@ cd bounded-agent-runtime
 npm install
 npm link
 bar doctor
+bar quickstart
 ```
 
-To run the synthetic no-model demo:
+### Option B: GitHub ZIP
+
+1. Open the latest GitHub release and download **Source code (zip)**.
+2. Extract the ZIP to a local folder.
+3. Open PowerShell in that folder and run:
 
 ```powershell
-npm run demo:reset
-npm run demo:init
-npm run demo:run
+npm install
+npm link
+bar doctor
+bar quickstart
 ```
 
-Expected stop:
+`bar quickstart` runs an isolated synthetic no-model workflow and must finish with:
 
 ```text
-HUMAN_GATE_REQUIRED
+4/4 PASS: HUMAN_GATE_REQUIRED
 ```
+
+That proves the basic workflow without performing a real merge, deploy or release. Protected Windows mode is an advanced setup and is intentionally separate from this first-run path.
 ## Run a real bounded coding task
 
 BAR refuses dirty source repositories and refuses implicit full-repo write authority. Allow paths explicitly:
@@ -124,7 +134,7 @@ Agent adapters do **not** use dangerous permission-bypass flags by default. Code
 | Ollama | — | ✅ | local reviewer prompt |
 | Generic command | ✅ | ✅ | bounded workspace + controller checks |
 | Docker container | ✅ | ✅ | disposable, `network none`, no host `.git` |
-See [`docs/15-CLI-AND-AGENTS.md`](docs/15-CLI-AND-AGENTS.md) for task creation and adapter details.
+See [`docs/15-CLI-AND-AGENTS.md`](docs/15-CLI-AND-AGENTS.md) for task creation and [`docs/19-ADAPTER-CONFORMANCE.md`](docs/19-ADAPTER-CONFORMANCE.md) for the adapter security contract and reproducible examples.
 
 ## Container isolation without a new platform
 
@@ -254,6 +264,9 @@ Read [SECURITY.md](SECURITY.md), the [Threat Model](docs/12-THREAT-MODEL.md) and
 | [`docs/16-MCP-AND-DASHBOARD.md`](docs/16-MCP-AND-DASHBOARD.md) | observation surfaces |
 | [`docs/17-NETWORK-AND-SECRETS.md`](docs/17-NETWORK-AND-SECRETS.md) | broker + secret boundary |
 | [`docs/18-CONTAINER-ISOLATION.md`](docs/18-CONTAINER-ISOLATION.md) | Docker isolation adapter |
+| [`docs/19-ADAPTER-CONFORMANCE.md`](docs/19-ADAPTER-CONFORMANCE.md) | adapter contract and examples |
+| [`docs/20-WHY-BAR.md`](docs/20-WHY-BAR.md) | five-minute value explanation |
+| [`ROADMAP.md`](ROADMAP.md) | public direction and non-goals |
 
 ## Contributing
 

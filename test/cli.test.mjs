@@ -55,3 +55,27 @@ test('bar run rejects same task id with different persisted authority',()=>{
   const altered=JSON.parse(fs.readFileSync(taskFile,'utf8')); altered.intent='different authority with same id'; const other=path.join(cwd,'task-altered.json'); fs.writeFileSync(other,JSON.stringify(altered,null,2));
   const second=run(['run','--task',other],cwd,env); assert.notEqual(second.status,0); assert.match(second.stderr,/TASK_FILE_MISMATCH/);
 });
+
+test('bar quickstart reaches Human Gate without architecture knowledge',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-quickstart-cli-'));
+  const result=run(['quickstart'],cwd,{...process.env,BOUNDED_AGENT_RUNTIME_ROOT:path.join(cwd,'unused')});
+  assert.equal(result.status,0,result.stderr); assert.match(result.stdout,/4\/4 PASS: HUMAN_GATE_REQUIRED/); assert.match(result.stdout,/stopped before any protected remote action/i);
+});
+
+test('bar status explains next safe step when uninitialized',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-status-cli-'));
+  const result=run(['status'],cwd,{...process.env,BOUNDED_AGENT_RUNTIME_ROOT:path.join(cwd,'runtime')});
+  assert.equal(result.status,0,result.stderr); assert.match(result.stdout,/State: NOT_INITIALIZED/); assert.match(result.stdout,/bar quickstart/);
+});
+
+test('CLI adapter contracts keep unsafe bypass flags out of primary defaults',async()=>{
+  const { buildAgentInvocation } = await import('../runtime/adapters/contracts.mjs');
+  const task={workers:{builder:{adapter:'codex'},reviewer:{adapter:'claude'}},task_id:'t',intent:'x',allowed_paths:['src']};
+  const codex=buildAgentInvocation({adapter:'codex',role:'builder',task,workspace:'C:/w',prompt:'x'});
+  assert.ok(codex.args.includes('workspace-write')); assert.equal(codex.args.includes('danger-full-access'),false); assert.equal(codex.args.includes('--full-auto'),false);
+  const claude=buildAgentInvocation({adapter:'claude',role:'reviewer',task,workspace:'C:/w',prompt:'x'});
+  assert.ok(claude.args.includes('plan')); assert.equal(claude.args.includes('--dangerously-skip-permissions'),false);
+  const openTask={...task,workers:{builder:{adapter:'opencode'}}};
+  const opencode=buildAgentInvocation({adapter:'opencode',role:'builder',task:openTask,workspace:'C:/w',prompt:'x'});
+  assert.ok(opencode.args.includes('--pure')); assert.equal(opencode.args.includes('--auto'),false);
+});
