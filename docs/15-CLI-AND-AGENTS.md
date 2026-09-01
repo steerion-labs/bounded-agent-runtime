@@ -30,8 +30,8 @@ The generated task binds source commit, Builder/Reviewer adapters, allowed paths
 
 | Adapter | Builder | Reviewer | Safety-oriented defaults |
 | --- | ---: | ---: | --- |
-| Codex | yes | yes | `workspace-write` Builder, `read-only` Reviewer, ephemeral session, ignored user config |
-| Claude Code | yes | yes | edit-only Builder tools, plan/read Reviewer tools, strict MCP config |
+| Codex | explicit opt-in | yes | Builder uses reviewed user config with `workspace-write`; Reviewer uses `read-only` + ignored user config/rules; ephemeral session |
+| Claude Code | yes | yes | Safe Mode, no session persistence, edit-only Builder tools, plan/read Reviewer tools, strict MCP config |
 | OpenCode | yes | yes | `--pure`, explicit directory, never `--auto` |
 | Ollama | no | yes | explicit model required |
 | Generic | yes | yes | executable + argv supplied out-of-band by controller environment |
@@ -39,7 +39,9 @@ The generated task binds source commit, Builder/Reviewer adapters, allowed paths
 
 BAR does not add Codex approval automation, Codex sandbox bypass, Claude permission bypass or OpenCode auto-approval flags.
 
-External agent authentication remains the responsibility of the installed CLI. BAR deliberately does not copy provider credentials into task files.
+External agent authentication remains the responsibility of the installed CLI. For Codex, Claude Code and OpenCode, `bar agents` also performs a bounded login/readiness probe when supported; this is a readiness signal, not a credential import. BAR deliberately does not copy provider credentials into task files. Authentication failures are reported as `*_AUTH_REQUIRED`.
+
+On Windows, BAR resolves native executables and standard npm `.cmd` shims to their underlying JS/EXE target without enabling shell execution. This is required for globally installed CLIs such as Codex and OpenCode.
 
 ## Run and inspect
 
@@ -61,3 +63,9 @@ bar authorize merge
 ```
 
 Protected mode requires approver identity, public key path and pinned fingerprint in controller configuration. Authorization never performs a remote mutation by itself.
+
+## Automatic adapter selection
+
+Use `--builder auto` or `--reviewer auto` when you want BAR to choose from ready adapters. Selection happens once during task creation, the concrete adapter is written into the task and therefore bound into task authority and evidence. BAR never switches adapters silently during `bar run`.
+
+Priority is deterministic after safety filtering: Builder `codex -> claude -> opencode -> container -> generic`; Reviewer `codex -> claude -> opencode -> ollama -> container -> generic`. Codex Builder is marked unsafe for automatic selection in v0.5 and becomes eligible only when the operator supplies `--builder-allow-user-config`, which is a task-bound acceptance of the reviewed local Codex configuration. Reviewer remains isolated with ignored user config. Containers are eligible only with task-specific image and command configuration.

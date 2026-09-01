@@ -1,9 +1,9 @@
 export function buildAgentInvocation({adapter,role,task,workspace,prompt,generic=null}) {
   const config=task.workers?.[role] ?? {adapter};
-  if(adapter==='codex') return {command:'codex',args:['exec','--sandbox',role==='builder'?'workspace-write':'read-only','--ephemeral','--ignore-user-config','--color','never','-C',workspace,...(config.model?['--model',config.model]:[]),prompt]};
+  if(adapter==='codex') { const isolation=role==='builder'?['--ignore-rules']:['--ignore-user-config','--ignore-rules']; return {command:'codex',args:['exec','--sandbox',role==='builder'?'workspace-write':'read-only','--ephemeral',...isolation,'--color','never','-C',workspace,...(config.model?['--model',config.model]:[]),prompt]}; }
   if(adapter==='claude') {
     const tools=role==='builder'?'Read,Edit,Write,Glob,Grep':'Read,Glob,Grep';
-    return {command:'claude',args:['-p','--output-format','text','--permission-mode',role==='builder'?'acceptEdits':'plan','--disable-slash-commands','--strict-mcp-config','--tools',tools,...(config.model?['--model',config.model]:[]),prompt]};
+    return {command:'claude',args:['-p','--safe-mode','--no-session-persistence','--output-format','text','--permission-mode',role==='builder'?'acceptEdits':'plan','--disable-slash-commands','--strict-mcp-config','--tools',tools,...(config.model?['--model',config.model]:[])],input:prompt};
   }
   if(adapter==='opencode') return {command:'opencode',args:['run','--pure','--dir',workspace,...(config.model?['--model',config.model]:[]),prompt]};
   if(adapter==='ollama') {

@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { buildAgentInvocation, parseReviewOutput } from './contracts.mjs';
+import { resolveLaunchCommand, classifyLaunchFailure } from './launcher.mjs';
+import { assertCodexBuilderConfigAllowed } from './codex-policy.mjs';
 
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 const { adapter, role, task, workspace, candidate, review_diff: reviewDiff = '', generic = null } = input;
@@ -37,10 +39,13 @@ function reviewerPrompt() {
 }
 
 
+if (adapter === 'codex' && role === 'builder') assertCodexBuilderConfigAllowed(task);
 const prompt = role === 'builder' ? builderPrompt() : reviewerPrompt();
 const call = buildAgentInvocation({adapter,role,task,workspace,prompt,generic});
-const result = spawnSync(call.command, call.args, {
+const launch = resolveLaunchCommand(call.command, call.args);
+const result = spawnSync(launch.command, launch.args, {
   cwd: workspace,
+  input: call.input,
   encoding: 'utf8',
   timeout: Math.max(1000, Number(input.timeout_ms) || 30000),
   env: process.env,
@@ -48,7 +53,7 @@ const result = spawnSync(call.command, call.args, {
   maxBuffer: 4 * 1024 * 1024
 });
 if (result.error?.code === 'ETIMEDOUT') throw new Error(`${adapter.toUpperCase()}_${role.toUpperCase()}_TIMEOUT`);
-if (result.status !== 0) throw new Error(`${adapter.toUpperCase()}_${role.toUpperCase()}_FAILED:${String(result.stderr || '').trim().slice(0, 1000) || result.status}`);
+if (result.status !== 0 || result.error) throw new Error(classifyLaunchFailure(adapter, role, result));
 const output = String(result.stdout || '').trim();
 if (role === 'builder') {
   process.stdout.write(JSON.stringify({ status: 'PASS', artifact: `agent:${adapter}`, summary: output.slice(-4000) }));

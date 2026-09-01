@@ -105,8 +105,8 @@ Use the agent you already like. BAR focuses on the part agent frameworks should 
 
 | Adapter | Builder | Reviewer | Default boundary |
 | --- | ---: | ---: | --- |
-| Codex | yes | yes | workspace-write / read-only |
-| Claude Code | yes | yes | edit tools / plan + read |
+| Codex | explicit opt-in | yes | workspace-write Builder with reviewed user config / isolated read-only Reviewer |
+| Claude Code | yes | yes | Safe Mode, edit tools / plan + read |
 | OpenCode | yes | yes | pure mode, no auto-approve |
 | Docker | yes | yes | disposable, network-none |
 
@@ -120,8 +120,8 @@ bar task `
   --intent "Fix the failing parser test" `
   --allow src `
   --allow test `
-  --builder codex `
-  --reviewer claude `
+  --builder auto `
+  --reviewer auto `
   --verify npm `
   --verify-arg test `
   --out bounded-task.json
@@ -131,6 +131,8 @@ bar status
 ```
 
 BAR refuses dirty source repositories and implicit full-repo write authority. The Builder works on a controller-created copy, BAR derives the candidate identity itself, verification runs separately, and the Reviewer receives an exact candidate copy.
+
+`auto` is resolved once when the task is created. BAR selects only adapters that are installed, explicitly authenticated when required, safe for the requested role, and task-configured when extra configuration is required. The concrete Builder and Reviewer adapters are written into the task before authority is hashed. BAR never switches agents silently during a run. In v0.5 Codex Builder is never auto-selected by default because Codex v0.150.1 cannot combine ignored user config with a writable Builder sandbox on the verified Windows host. An operator may explicitly accept reviewed Codex user configuration with `--builder-allow-user-config`; Codex Reviewer remains isolated and read-only.
 
 ## Security posture
 

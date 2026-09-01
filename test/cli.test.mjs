@@ -74,8 +74,108 @@ test('CLI adapter contracts keep unsafe bypass flags out of primary defaults',as
   const codex=buildAgentInvocation({adapter:'codex',role:'builder',task,workspace:'C:/w',prompt:'x'});
   assert.ok(codex.args.includes('workspace-write')); assert.equal(codex.args.includes('danger-full-access'),false); assert.equal(codex.args.includes('--full-auto'),false);
   const claude=buildAgentInvocation({adapter:'claude',role:'reviewer',task,workspace:'C:/w',prompt:'x'});
-  assert.ok(claude.args.includes('plan')); assert.equal(claude.args.includes('--dangerously-skip-permissions'),false);
+  assert.ok(claude.args.includes('plan')); assert.ok(claude.args.includes('--safe-mode')); assert.equal(typeof claude.input,'string'); assert.equal(claude.args.includes('--dangerously-skip-permissions'),false);
   const openTask={...task,workers:{builder:{adapter:'opencode'}}};
   const opencode=buildAgentInvocation({adapter:'opencode',role:'builder',task:openTask,workspace:'C:/w',prompt:'x'});
   assert.ok(opencode.args.includes('--pure')); assert.equal(opencode.args.includes('--auto'),false);
+});
+
+test('Windows npm command shims resolve without shell execution', async t => {
+  if (process.platform !== 'win32') return t.skip('Windows-specific launcher contract');
+  const { resolveLaunchCommand } = await import('../runtime/adapters/launcher.mjs');
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'bar-launcher-'));
+  const target=path.join(dir,'node_modules','demo','bin','tool.js'); fs.mkdirSync(path.dirname(target),{recursive:true}); fs.writeFileSync(target,'');
+  const shim=path.join(dir,'bar-test-shim.cmd');
+  fs.writeFileSync(shim,'@ECHO off\r\n"%dp0%\\node.exe" "%dp0%\\node_modules\\demo\\bin\\tool.js" %*\r\n');
+  const previous=process.env.PATH; process.env.PATH=`${dir};${previous}`;
+  try {
+    const resolved=resolveLaunchCommand('bar-test-shim',['hello']);
+    assert.equal(resolved.command,process.execPath); assert.equal(path.normalize(resolved.args[0]),path.normalize(target)); assert.equal(resolved.args[1],'hello');
+  } finally { process.env.PATH=previous; fs.rmSync(dir,{recursive:true,force:true}); }
+});
+
+test('launcher failures preserve actionable OS error details', async()=>{
+  const { launchFailureDetail, classifyLaunchFailure } = await import('../runtime/adapters/launcher.mjs');
+  assert.match(launchFailureDetail({error:{code:'ENOENT',message:'spawn missing ENOENT'}}),/ENOENT/);
+  assert.equal(launchFailureDetail({status:null,stderr:'',stdout:''}),'NO_EXIT_STATUS');
+  assert.match(classifyLaunchFailure('claude','reviewer',{status:1,stderr:'Failed to authenticate: OAuth session expired'}),/CLAUDE_REVIEWER_AUTH_REQUIRED/);
+});
+
+test('auto adapter selection is deterministic and role-aware',async()=>{
+  const { selectAvailableAdapter } = await import('../runtime/adapters/registry.mjs');
+  const agents={codex:{installed:false},claude:{installed:true,authenticated:true},opencode:{installed:true,authenticated:true},ollama:{installed:true},container:{installed:false},generic:{installed:false}};
+  assert.equal(selectAvailableAdapter('builder',agents),'claude');
+  assert.equal(selectAvailableAdapter('reviewer',agents),'claude');
+  const reviewerOnly={...agents,claude:{installed:false},opencode:{installed:false}};
+  assert.equal(selectAvailableAdapter('reviewer',reviewerOnly),'ollama');
+  assert.throws(()=>selectAvailableAdapter('builder',reviewerOnly),/AUTO_ADAPTER_UNAVAILABLE:builder/);
+});
+
+test('auto adapter selection skips unauthenticated or unsafe builders',async()=>{
+  const { selectAvailableAdapter } = await import('../runtime/adapters/registry.mjs');
+  const agents={codex:{installed:true,authenticated:true,safe_for_builder:false},claude:{installed:true,authenticated:false},opencode:{installed:true,authenticated:true},container:{installed:false},generic:{installed:false}};
+  assert.equal(selectAvailableAdapter('builder',agents),'opencode');
+  assert.equal(selectAvailableAdapter('reviewer',agents),'codex');
+});
+
+test('auto selection requires explicit auth readiness for remote agent CLIs',async()=>{
+  const { selectAvailableAdapter } = await import('../runtime/adapters/registry.mjs');
+  const agents={codex:{installed:true},claude:{installed:true},opencode:{installed:true},ollama:{installed:true},container:{installed:false},generic:{installed:false}};
+  assert.equal(selectAvailableAdapter('reviewer',agents),'ollama');
+  assert.throws(()=>selectAvailableAdapter('builder',agents),/AUTO_ADAPTER_UNAVAILABLE:builder/);
+  agents.opencode.authenticated=true; assert.equal(selectAvailableAdapter('builder',agents),'opencode');
+});
+
+test('Codex builder user extensions fail closed without task opt-in',async()=>{
+  const { inspectCodexUserExtensions, assertCodexBuilderConfigAllowed } = await import('../runtime/adapters/codex-policy.mjs');
+  const home=fs.mkdtempSync(path.join(os.tmpdir(),'bar-codex-policy-'));
+  fs.writeFileSync(path.join(home,'config.toml'),'[mcp_servers.demo]\ncommand="demo"\n[features]\nhooks = true\n');
+  const env={...process.env,CODEX_HOME:home};
+  try {
+    const state=inspectCodexUserExtensions(env); assert.equal(state.risky,true); assert.ok(state.reasons.includes('mcp_servers')); assert.ok(state.reasons.includes('hooks'));
+    assert.throws(()=>assertCodexBuilderConfigAllowed({workers:{builder:{adapter:'codex'}}},env),/CODEX_BUILDER_EXPLICIT_OPT_IN_REQUIRED/);
+    assert.doesNotThrow(()=>assertCodexBuilderConfigAllowed({workers:{builder:{adapter:'codex',allow_user_config:true}}},env));
+  } finally { fs.rmSync(home,{recursive:true,force:true}); }
+});
+
+test('Windows launcher preserves PATH directory precedence', async t => {
+  if (process.platform !== 'win32') return t.skip('Windows-specific launcher contract');
+  const { resolveLaunchCommand } = await import('../runtime/adapters/launcher.mjs');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'bar-path-order-'));
+  const first=path.join(root,'first'), second=path.join(root,'second'); fs.mkdirSync(first); fs.mkdirSync(second);
+  const target=path.join(first,'tool.js'); fs.writeFileSync(target,'');
+  fs.writeFileSync(path.join(first,'bar-order.cmd'),'@ECHO off\r\n"%dp0%\\tool.js" %*\r\n');
+  fs.writeFileSync(path.join(second,'bar-order.exe'),'not-a-real-exe');
+  const prevPath=process.env.PATH, prevExt=process.env.PATHEXT; process.env.PATH=`${first};${second};${prevPath}`; process.env.PATHEXT='.EXE;.COM;.BAT;.CMD';
+  try { const resolved=resolveLaunchCommand('bar-order',[]); assert.equal(resolved.command,process.execPath); assert.equal(path.normalize(resolved.args[0]),path.normalize(target)); }
+  finally { process.env.PATH=prevPath; if(prevExt===undefined) delete process.env.PATHEXT; else process.env.PATHEXT=prevExt; fs.rmSync(root,{recursive:true,force:true}); }
+});
+
+test('auto selection never picks an unconfigured container',async()=>{
+  const { selectAvailableAdapter } = await import('../runtime/adapters/registry.mjs');
+  const agents={codex:{installed:true,authenticated:true,safe_for_builder:false},claude:{installed:true,authenticated:false},opencode:{installed:true,authenticated:false},container:{installed:true,configured_for_builder:false},generic:{installed:false}};
+  assert.throws(()=>selectAvailableAdapter('builder',agents),/AUTO_ADAPTER_UNAVAILABLE:builder/);
+  agents.container.configured_for_builder=true; assert.equal(selectAvailableAdapter('builder',agents),'container');
+});
+
+
+test('Codex builder task creation requires explicit user-config opt-in',()=>{
+  const src=sourceRepo(), cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-codex-explicit-')), out=path.join(cwd,'task.json');
+  const result=run(['task','--repo',src,'--intent','x','--allow','src','--builder','codex','--reviewer','demo','--out',out],cwd);
+  assert.notEqual(result.status,0); assert.match(result.stderr,/CODEX_BUILDER_EXPLICIT_OPT_IN_REQUIRED/);
+});
+
+test('Windows resolver supports real Codex and OpenCode npm shim forms', async t => {
+  if (process.platform !== 'win32') return t.skip('Windows-specific launcher contract');
+  const { resolveLaunchCommand } = await import('../runtime/adapters/launcher.mjs');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'bar-real-shims-'));
+  const codexJs=path.join(root,'node_modules','@openai','codex','bin','codex.js'); fs.mkdirSync(path.dirname(codexJs),{recursive:true}); fs.writeFileSync(codexJs,'');
+  const openExe=path.join(root,'node_modules','opencode-ai','bin','opencode.exe'); fs.mkdirSync(path.dirname(openExe),{recursive:true}); fs.writeFileSync(openExe,'');
+  fs.writeFileSync(path.join(root,'codex.cmd'),'@ECHO off\r\nGOTO start\r\n:start\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n');
+  fs.writeFileSync(path.join(root,'opencode.cmd'),'@ECHO off\r\n"%dp0%\\node_modules\\opencode-ai\\bin\\opencode.exe"   %*\r\n');
+  const prev=process.env.PATH; process.env.PATH=`${root};${prev}`;
+  try {
+    const codex=resolveLaunchCommand('codex',['--version']); assert.equal(codex.command,process.execPath); assert.equal(path.normalize(codex.args[0]),path.normalize(codexJs));
+    const opencode=resolveLaunchCommand('opencode',['--version']); assert.equal(path.normalize(opencode.command),path.normalize(openExe)); assert.deepEqual(opencode.args,['--version']);
+  } finally { process.env.PATH=prev; fs.rmSync(root,{recursive:true,force:true}); }
 });
