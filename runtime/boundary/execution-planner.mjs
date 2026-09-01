@@ -3,7 +3,7 @@ import { createBoundaryBinding } from './binding.mjs';
 import { routeAgent } from './agent-router.mjs';
 import { routeProvider } from './provider-router.mjs';
 
-export function createExecutionPlan({ task, registry, capability_id, action, role, agents, providers = [], controller_state = null, evidence = [], policy_version = 'boundary-v0.1' }) {
+export function createExecutionPlan({ task, registry, capability_id, action, role, agents, providers = [], provider_registry = null, controller_state = null, evidence = [], policy_version = 'boundary-v0.1' }) {
   if (!controller_state?.candidate_sha || !controller_state?.tree_hash) return Object.freeze({ executable: false, authority: Object.freeze({ decision: AUTHORITY_DECISIONS.DENY, reason: 'CONTROLLER_CANDIDATE_REQUIRED' }), binding: null });
   const authority = decideBoundaryAuthority({ task, registry, capability_id, action, role, evidence, controller_state });
   if (authority.decision === AUTHORITY_DECISIONS.DENY) return Object.freeze({ executable: false, authority, binding: null });
@@ -11,7 +11,7 @@ export function createExecutionPlan({ task, registry, capability_id, action, rol
   const agentRoute = routeAgent({ role, capability, agents });
   let providerRoute = null;
   if (capability.network === 'external' || capability.credentials === 'provider') {
-    providerRoute = routeProvider({ capability_id, data_class: task.data_class, providers });
+    providerRoute = routeProvider({ capability_id, data_class: task.data_class, providers, registry: provider_registry });
   }
   const binding = createBoundaryBinding({
     task_id: task.task_id,

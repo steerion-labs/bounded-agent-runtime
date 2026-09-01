@@ -6,6 +6,7 @@ import { decideBoundaryAuthority } from '../runtime/boundary/authority-engine.mj
 import { createBoundaryBinding, assertBoundaryBinding, assertNoAdapterFallback, assertNoProviderFallback } from '../runtime/boundary/binding.mjs';
 import { routeAgent } from '../runtime/boundary/agent-router.mjs';
 import { routeProvider } from '../runtime/boundary/provider-router.mjs';
+import { createProviderRegistry, promoteProvider, enableVerifiedProvider } from '../runtime/boundary/provider-registry.mjs';
 import { createExecutionPlan } from '../runtime/boundary/execution-planner.mjs';
 import { observeImprovementSignals } from '../runtime/boundary/improvement-observer.mjs';
 import { assessSkillCandidate } from '../runtime/boundary/skill-intake.mjs';
@@ -191,4 +192,29 @@ test('policy set ordering does not change controller task identity',()=>{
   const reordered={...original,allowed_capabilities:[...original.allowed_capabilities].reverse(),allowed_actions:[...original.allowed_actions].reverse(),protected_actions:[...original.protected_actions].reverse()};
   const result=decideBoundaryAuthority({task:reordered,registry,capability_id:'code.modify',action:'build_local',role:'builder',evidence:[proof.item],controller_state:proof.state});
   assert.equal(result.decision,'ALLOW_LOCAL');
+});
+
+test('community provider catalog entries are discovery-only and never routable',()=>{
+  const catalog=JSON.parse(fs.readFileSync(new URL('../examples/provider-discovery.example.json',import.meta.url),'utf8'));
+  const providerRegistry=createProviderRegistry(catalog.providers);
+  assert.equal(providerRegistry.list().length,14);
+  assert.equal(providerRegistry.routable('groq'),false);
+  assert.throws(()=>routeProvider({capability_id:'research.search',data_class:'public',providers:[{name:'groq',available:true,authenticated:true}],registry:providerRegistry}),/BOUNDARY_PROVIDER_UNAVAILABLE/);
+});
+
+test('provider promotion requires official verification and explicit enablement',()=>{
+  const discovered={id:'groq',display_name:'Groq',source:'community-catalog',trust:'DISCOVERY_ONLY',enabled:false};
+  assert.throws(()=>promoteProvider(discovered,{}),/OFFICIAL_VERIFICATION_REQUIRED/);
+  const verified=promoteProvider(discovered,{official_docs:'https://example.invalid/official',allowed_data_classes:['public'],capabilities:['research.search']});
+  assert.equal(verified.trust,'VERIFIED'); assert.equal(verified.enabled,false);
+  const enabled=enableVerifiedProvider(verified); assert.equal(enabled.enabled,true);
+  const providerRegistry=createProviderRegistry([enabled]);
+  const route=routeProvider({capability_id:'research.search',data_class:'public',providers:[{name:'groq',available:true,authenticated:true,priority:1}],registry:providerRegistry});
+  assert.equal(route.provider,'groq'); assert.equal(route.registry_enforced,true);
+});
+
+test('provider registry prevents data-class escalation and silent free-provider substitution',()=>{
+  const verified=enableVerifiedProvider(promoteProvider({id:'public-free',trust:'DISCOVERY_ONLY'},{official_docs:'https://example.invalid/official',allowed_data_classes:['public'],capabilities:['research.search']}));
+  const providerRegistry=createProviderRegistry([verified]);
+  assert.throws(()=>routeProvider({capability_id:'research.search',data_class:'internal',providers:[{name:'public-free',available:true,authenticated:true}],registry:providerRegistry}),/BOUNDARY_PROVIDER_UNAVAILABLE/);
 });
