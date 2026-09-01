@@ -28,7 +28,7 @@ export function selectAvailableAdapter(role, agents) {
   const selected = order.find(name => {
     const agent = agents?.[name];
     if (!agent?.installed || !definitions[name]?.roles.includes(role)) return false;
-    if (agent.authenticated === false) return false;
+    if (['codex','claude','opencode'].includes(name) && agent.authenticated !== true) return false;
     if (role === 'builder' && agent.safe_for_builder === false) return false;
     if (name === 'container' && agent[`configured_for_${role}`] !== true) return false;
     return true;

@@ -103,7 +103,7 @@ test('launcher failures preserve actionable OS error details', async()=>{
 
 test('auto adapter selection is deterministic and role-aware',async()=>{
   const { selectAvailableAdapter } = await import('../runtime/adapters/registry.mjs');
-  const agents={codex:{installed:false},claude:{installed:true},opencode:{installed:true},ollama:{installed:true},container:{installed:false},generic:{installed:false}};
+  const agents={codex:{installed:false},claude:{installed:true,authenticated:true},opencode:{installed:true,authenticated:true},ollama:{installed:true},container:{installed:false},generic:{installed:false}};
   assert.equal(selectAvailableAdapter('builder',agents),'claude');
   assert.equal(selectAvailableAdapter('reviewer',agents),'claude');
   const reviewerOnly={...agents,claude:{installed:false},opencode:{installed:false}};
@@ -116,6 +116,14 @@ test('auto adapter selection skips unauthenticated or unsafe builders',async()=>
   const agents={codex:{installed:true,authenticated:true,safe_for_builder:false},claude:{installed:true,authenticated:false},opencode:{installed:true,authenticated:true},container:{installed:false},generic:{installed:false}};
   assert.equal(selectAvailableAdapter('builder',agents),'opencode');
   assert.equal(selectAvailableAdapter('reviewer',agents),'codex');
+});
+
+test('auto selection requires explicit auth readiness for remote agent CLIs',async()=>{
+  const { selectAvailableAdapter } = await import('../runtime/adapters/registry.mjs');
+  const agents={codex:{installed:true},claude:{installed:true},opencode:{installed:true},ollama:{installed:true},container:{installed:false},generic:{installed:false}};
+  assert.equal(selectAvailableAdapter('reviewer',agents),'ollama');
+  assert.throws(()=>selectAvailableAdapter('builder',agents),/AUTO_ADAPTER_UNAVAILABLE:builder/);
+  agents.opencode.authenticated=true; assert.equal(selectAvailableAdapter('builder',agents),'opencode');
 });
 
 test('Codex builder user extensions fail closed without task opt-in',async()=>{
