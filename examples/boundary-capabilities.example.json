@@ -1,106 +1,232 @@
 [
   {
     "id": "code.modify",
-    "roles": ["builder"],
-    "actions": ["build_local"],
-    "adapters": ["codex", "claude", "opencode", "container", "generic"],
+    "roles": [
+      "builder"
+    ],
+    "actions": [
+      "build_local"
+    ],
+    "adapters": [
+      "codex",
+      "claude",
+      "opencode",
+      "container",
+      "generic"
+    ],
     "isolation": "process",
     "network": "bounded",
     "credentials": "task",
     "verification_required": true,
     "human_gate_required": false,
-    "data_classes": ["public", "internal", "confidential"]
+    "data_classes": [
+      "public",
+      "internal",
+      "confidential"
+    ]
   },
   {
     "id": "code.review",
-    "roles": ["reviewer"],
-    "actions": ["review_local"],
-    "adapters": ["codex", "claude", "opencode", "ollama", "container", "generic"],
+    "roles": [
+      "reviewer"
+    ],
+    "actions": [
+      "review_local"
+    ],
+    "adapters": [
+      "codex",
+      "claude",
+      "opencode",
+      "ollama",
+      "container",
+      "generic"
+    ],
     "isolation": "process",
     "network": "none",
     "credentials": "none",
     "verification_required": false,
     "human_gate_required": false,
-    "data_classes": ["public", "internal", "confidential", "secret"]
-  },  {
+    "data_classes": [
+      "public",
+      "internal",
+      "confidential",
+      "secret"
+    ]
+  },
+  {
     "id": "browser.test",
-    "roles": ["builder", "reviewer"],
-    "actions": ["browser_test"],
-    "adapters": ["codex", "claude", "opencode", "container", "generic"],
+    "roles": [
+      "builder",
+      "reviewer"
+    ],
+    "actions": [
+      "browser_test"
+    ],
+    "adapters": [
+      "codex",
+      "claude",
+      "opencode",
+      "container",
+      "generic"
+    ],
     "isolation": "container",
     "network": "bounded",
     "credentials": "task",
     "verification_required": true,
     "human_gate_required": false,
-    "data_classes": ["public", "internal"]
+    "data_classes": [
+      "public",
+      "internal"
+    ]
   },
   {
     "id": "browser.submit",
-    "roles": ["operator"],
-    "actions": ["browser_submit"],
-    "adapters": ["container", "generic"],
+    "roles": [
+      "operator"
+    ],
+    "actions": [
+      "browser_submit"
+    ],
+    "adapters": [
+      "container",
+      "generic"
+    ],
     "isolation": "container",
     "network": "bounded",
     "credentials": "task",
     "verification_required": true,
     "human_gate_required": true,
-    "data_classes": ["public", "internal", "confidential"]
-  },  {
+    "data_classes": [
+      "public",
+      "internal",
+      "confidential"
+    ]
+  },
+  {
     "id": "research.search",
-    "roles": ["researcher", "reviewer"],
-    "actions": ["research_search"],
-    "adapters": ["codex", "claude", "opencode", "generic"],
+    "roles": [
+      "researcher",
+      "reviewer"
+    ],
+    "actions": [
+      "research_search"
+    ],
+    "adapters": [
+      "codex",
+      "claude",
+      "opencode",
+      "generic"
+    ],
     "isolation": "process",
     "network": "external",
     "credentials": "provider",
     "verification_required": false,
     "human_gate_required": false,
-    "data_classes": ["public", "internal"]
+    "data_classes": [
+      "public",
+      "internal"
+    ]
   },
   {
     "id": "skill.discover",
-    "roles": ["researcher", "operator"],
-    "actions": ["skill_discover"],
-    "adapters": ["codex", "claude", "opencode", "generic"],
+    "roles": [
+      "researcher",
+      "operator"
+    ],
+    "actions": [
+      "skill_discover"
+    ],
+    "adapters": [
+      "codex",
+      "claude",
+      "opencode",
+      "generic"
+    ],
     "isolation": "process",
     "network": "external",
     "credentials": "none",
     "verification_required": false,
     "human_gate_required": false,
-    "data_classes": ["public"]
-  },  {
+    "data_classes": [
+      "public"
+    ]
+  },
+  {
     "id": "knowledge.read",
-    "roles": ["builder", "reviewer", "researcher", "operator"],
-    "actions": ["knowledge_read"],
-    "adapters": ["codex", "claude", "opencode", "generic"],
+    "roles": [
+      "builder",
+      "reviewer",
+      "researcher",
+      "operator"
+    ],
+    "actions": [
+      "knowledge_read"
+    ],
+    "adapters": [
+      "codex",
+      "claude",
+      "opencode",
+      "generic"
+    ],
     "isolation": "process",
     "network": "none",
     "credentials": "none",
     "verification_required": false,
     "human_gate_required": false,
-    "data_classes": ["public", "internal", "confidential", "secret"]
+    "data_classes": [
+      "public",
+      "internal",
+      "confidential",
+      "secret"
+    ]
   },
   {
     "id": "improvement.observe",
-    "roles": ["reviewer", "operator"],
-    "actions": ["improvement_observe"],
-    "adapters": ["codex", "claude", "opencode", "generic"],
+    "roles": [
+      "reviewer",
+      "operator"
+    ],
+    "actions": [
+      "improvement_observe"
+    ],
+    "adapters": [
+      "codex",
+      "claude",
+      "opencode",
+      "generic"
+    ],
     "isolation": "process",
     "network": "none",
     "credentials": "none",
     "verification_required": false,
     "human_gate_required": false,
-    "data_classes": ["public", "internal", "confidential"]
-  },  {
+    "data_classes": [
+      "public",
+      "internal",
+      "confidential"
+    ]
+  },
+  {
     "id": "media.generate",
-    "roles": ["builder", "operator"],
-    "actions": ["media_generate"],
-    "adapters": ["container", "generic"],
+    "roles": [
+      "builder",
+      "operator"
+    ],
+    "actions": [
+      "media_generate"
+    ],
+    "adapters": [
+      "container",
+      "generic"
+    ],
     "isolation": "container",
     "network": "none",
     "credentials": "none",
     "verification_required": false,
     "human_gate_required": false,
-    "data_classes": ["public", "internal"]
+    "data_classes": [
+      "public",
+      "internal"
+    ]
   }
 ]

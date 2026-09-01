@@ -15,7 +15,7 @@ A task may use a capability only when:
 2. the task explicitly grants it,
 3. the action and role are allowed,
 4. the selected adapter is ready and policy-compatible,
-5. required verification evidence exists,
+5. required verification evidence is BAR-HMAC verified, controller-owned and bound to task, capability, action, role and candidate identity,
 6. protected effects reach the Human Gate.
 
 Unknown capability, unknown action, unsafe routing or binding drift fails closed.
@@ -25,7 +25,9 @@ Unknown capability, unknown action, unsafe routing or binding drift fails closed
 - `capability-registry.mjs`: typed capability contracts
 - `authority-engine.mjs`: deterministic `ALLOW_LOCAL`, `HUMAN_GATE_REQUIRED`, `DENY`
 - `agent-router.mjs`: pre-execution adapter selection
-- `provider-router.mjs`: data-class-aware provider selection- `binding.mjs`: exact task/capability/action/role/adapter/provider binding
+- `provider-router.mjs`: data-class-aware provider selection
+- `binding.mjs`: exact task/capability/action/role/adapter/provider/data-class/candidate binding
+- `evidence-contract.mjs`: BAR-HMAC-verified, controller-owned verification evidence
 - `execution-planner.mjs`: non-executable plans while Human Gate is pending
 - `improvement-observer.mjs`: observe and propose, never self-modify
 - `skill-intake.mjs`: discovered skills enter Labs review, never direct promotion
@@ -54,7 +56,9 @@ Task execution
 
 The observer has no authority to edit policy, install skills or promote its own proposal.
 
-## External technology intakeThe following projects are evaluation candidates, not trusted dependencies:
+## External technology intake
+
+The following projects are evaluation candidates, not trusted dependencies:
 
 | Candidate | Boundary question |
 |---|---|

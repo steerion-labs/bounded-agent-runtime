@@ -9,6 +9,7 @@ import { routeProvider } from '../runtime/boundary/provider-router.mjs';
 import { createExecutionPlan } from '../runtime/boundary/execution-planner.mjs';
 import { observeImprovementSignals } from '../runtime/boundary/improvement-observer.mjs';
 import { assessSkillCandidate } from '../runtime/boundary/skill-intake.mjs';
+import { createBoundaryVerificationEvidence } from '../runtime/boundary/evidence-contract.mjs';
 
 const manifest = JSON.parse(fs.readFileSync(new URL('../examples/boundary-capabilities.example.json', import.meta.url), 'utf8'));
 const registry = createCapabilityRegistry(manifest);
@@ -24,6 +25,20 @@ function task(overrides={}) {
   };
 }
 
+
+function controllerState(boundTask = task()) {
+  return {
+    task_id: boundTask.task_id,
+    task: boundTask,
+    candidate_sha: 'a'.repeat(40),
+    tree_hash: 'b'.repeat(40)
+  };
+}
+function verified(boundTask, capability_id, action, role) {
+  const state=controllerState(boundTask);
+  return { state, item:createBoundaryVerificationEvidence({state,capability_id,action,role}) };
+}
+
 test('capability registry validates and denies unknown capability lookup',()=>{
   assert.equal(registry.require('code.modify').id,'code.modify');
   assert.throws(()=>registry.require('unknown.capability'),/BOUNDARY_CAPABILITY_UNKNOWN/);
@@ -31,31 +46,37 @@ test('capability registry validates and denies unknown capability lookup',()=>{
 test('authority is deny-by-default and requires verification when declared',()=>{
   const capability=registry.require('code.modify');
   const denied=decideBoundaryAuthority({task:task(),registry,capability_id:'code.modify',action:'build_local',role:'builder',evidence:[]});
-  assert.equal(denied.decision,'DENY'); assert.equal(denied.reason,'VERIFICATION_REQUIRED');
-  const allowed=decideBoundaryAuthority({task:task(),registry,capability_id:'code.modify',action:'build_local',role:'builder',evidence:[{kind:'verification',passed:true,capability_id:'code.modify'}]});
+  assert.equal(denied.decision,'DENY'); assert.equal(denied.reason,'VERIFICATION_STATE_REQUIRED');
+  const boundTask=task(); const proof=verified(boundTask,'code.modify','build_local','builder');
+  const allowed=decideBoundaryAuthority({task:boundTask,registry,capability_id:'code.modify',action:'build_local',role:'builder',evidence:[proof.item],controller_state:proof.state});
   assert.equal(allowed.decision,'ALLOW_LOCAL');
 });
 
 test('protected capability action routes to Human Gate',()=>{
   const capability=registry.require('browser.submit');
-  const result=decideBoundaryAuthority({task:task(),registry,capability_id:'browser.submit',action:'browser_submit',role:'operator',evidence:[{kind:'verification',passed:true,capability_id:'browser.submit'}]});
+  const boundTask=task(); const proof=verified(boundTask,'browser.submit','browser_submit','operator');
+  const result=decideBoundaryAuthority({task:boundTask,registry,capability_id:'browser.submit',action:'browser_submit',role:'operator',evidence:[proof.item],controller_state:proof.state});
   assert.equal(result.decision,'HUMAN_GATE_REQUIRED');
 });
 
 test('binding detects mutation and blocks adapter or provider fallback',()=>{
-  const input={task_id:'t1',capability_id:'research.search',action:'research_search',role:'researcher',adapter:'codex',provider:'p1'};
+  const input={task_id:'t1',capability_id:'research.search',action:'research_search',role:'researcher',adapter:'codex',provider:'p1',data_class:'internal',candidate_sha:'a'.repeat(40),tree_hash:'b'.repeat(40)};
   const binding=createBoundaryBinding(input);
   assert.equal(assertBoundaryBinding(binding,input),true);
   assert.throws(()=>assertBoundaryBinding(binding,{...input,adapter:'claude'}),/BOUNDARY_BINDING_MISMATCH/);
   assert.throws(()=>assertNoAdapterFallback(binding,'claude'),/BOUNDARY_ADAPTER_REBIND_DENIED/);
   assert.throws(()=>assertNoProviderFallback(binding,'p2'),/BOUNDARY_PROVIDER_REBIND_DENIED/);
 });
+test('binding rejects missing candidate or tree identity',()=>{
+  assert.throws(()=>createBoundaryBinding({task_id:'t1',capability_id:'research.search',action:'research_search',role:'researcher',adapter:'codex',data_class:'internal'}),/BOUNDARY_BINDING_INVALID/);
+});
+
 test('agent routing skips unauthenticated and role-unsafe adapters deterministically',()=>{
   const capability=registry.require('code.modify');
   const agents=[
-    {name:'codex',installed:true,authenticated:true,safe_for_builder:false},
-    {name:'claude',installed:true,authenticated:false},
-    {name:'opencode',installed:true,authenticated:true,safe_for_builder:true}
+    {name:'codex',installed:true,authenticated:true,safe_for_builder:false,ready_for_builder:true},
+    {name:'claude',installed:true,authenticated:false,safe_for_builder:true,ready_for_builder:true},
+    {name:'opencode',installed:true,authenticated:true,safe_for_builder:true,ready_for_builder:true}
   ];
   assert.equal(routeAgent({role:'builder',capability,agents}).adapter,'opencode');
 });
@@ -70,8 +91,8 @@ test('provider routing respects data classification and deterministic priority',
 });
 
 test('execution plan cannot execute while Human Gate is required',()=>{
-  const capability=registry.require('browser.submit');
-  const plan=createExecutionPlan({task:task(),registry,capability_id:'browser.submit',action:'browser_submit',role:'operator',agents:[{name:'container',installed:true}],evidence:[{kind:'verification',passed:true,capability_id:'browser.submit'}]});
+  const boundTask=task(); const proof=verified(boundTask,'browser.submit','browser_submit','operator');
+  const plan=createExecutionPlan({task:boundTask,registry,capability_id:'browser.submit',action:'browser_submit',role:'operator',agents:[{name:'container',installed:true,authenticated:true,safe_for_operator:true,ready_for_operator:true}],evidence:[proof.item],controller_state:proof.state});
   assert.equal(plan.executable,false); assert.equal(plan.human_gate_required,true); assert.ok(plan.binding.binding_sha256);
 });
 test('improvement observer proposes but never self-modifies',()=>{
@@ -101,10 +122,73 @@ test('authority enforces task data classification against capability policy',()=
 });
 
 test('execution planner deterministically routes and binds agent plus provider',()=>{
-  const agents=[{name:'codex',installed:true,authenticated:true,safe_for_researcher:true}];
+  const agents=[{name:'codex',installed:true,authenticated:true,safe_for_researcher:true,ready_for_researcher:true}];
   const providers=[{name:'internal-provider',available:true,authenticated:true,priority:1,capabilities:['research.search'],allowed_data_classes:['internal']}];
-  const plan=createExecutionPlan({task:task(),registry,capability_id:'research.search',action:'research_search',role:'researcher',agents,providers});
+  const boundTask=task(); const state=controllerState(boundTask);
+  const plan=createExecutionPlan({task:boundTask,registry,capability_id:'research.search',action:'research_search',role:'researcher',agents,providers,controller_state:state});
   assert.equal(plan.executable,true);
   assert.equal(plan.route.agent.adapter,'codex'); assert.equal(plan.route.provider.provider,'internal-provider');
   assert.equal(plan.binding.adapter,'codex'); assert.equal(plan.binding.provider,'internal-provider');
+});
+
+
+test('spoofed or wrong-candidate verification evidence cannot authorize',()=>{
+  const boundTask=task(); const state=controllerState(boundTask);
+  const spoof={claim:'boundary_verification',producer_identity:'controller',trust_class:'CONTROLLER_VERIFIED',status:'VALID',task_id:boundTask.task_id,candidate_sha:state.candidate_sha,tree_hash:state.tree_hash,payload_hash:'fake',integrity_hmac:'fake'};
+  const spoofed=decideBoundaryAuthority({task:boundTask,registry,capability_id:'code.modify',action:'build_local',role:'builder',evidence:[spoof],controller_state:state});
+  assert.equal(spoofed.reason,'VERIFICATION_REQUIRED');
+  const proof=verified(boundTask,'code.modify','build_local','builder');
+  const drifted={...proof.state,candidate_sha:'c'.repeat(40)};
+  const wrongCandidate=decideBoundaryAuthority({task:boundTask,registry,capability_id:'code.modify',action:'build_local',role:'builder',evidence:[proof.item],controller_state:drifted});
+  assert.equal(wrongCandidate.reason,'VERIFICATION_REQUIRED');
+});
+
+test('agent router requires explicit auth safety and readiness true',()=>{
+  const capability=registry.require('code.modify');
+  assert.throws(()=>routeAgent({role:'builder',capability,agents:[{name:'codex',installed:true,authenticated:true,safe_for_builder:true}]}),/BOUNDARY_AGENT_UNAVAILABLE/);
+  assert.throws(()=>routeAgent({role:'builder',capability,agents:[{name:'codex',installed:true,ready_for_builder:true,safe_for_builder:true}]}),/BOUNDARY_AGENT_UNAVAILABLE/);
+});
+
+test('provider router rejects nameless or unknown-auth providers',()=>{
+  const base={available:true,authenticated:true,capabilities:['research.search'],allowed_data_classes:['internal']};
+  assert.throws(()=>routeProvider({capability_id:'research.search',data_class:'internal',providers:[base]}),/BOUNDARY_PROVIDER_UNAVAILABLE/);
+  assert.throws(()=>routeProvider({capability_id:'research.search',data_class:'internal',providers:[{...base,name:'p',authenticated:undefined}]}),/BOUNDARY_PROVIDER_UNAVAILABLE/);
+});
+
+test('binding covers data class and exact candidate tree identity',()=>{
+  const input={task_id:'t1',capability_id:'research.search',action:'research_search',role:'researcher',adapter:'codex',provider:'p1',data_class:'internal',candidate_sha:'a'.repeat(40),tree_hash:'b'.repeat(40)};
+  const binding=createBoundaryBinding(input);
+  assert.throws(()=>assertBoundaryBinding(binding,{...input,data_class:'public'}),/BOUNDARY_BINDING_MISMATCH/);
+  assert.throws(()=>assertBoundaryBinding(binding,{...input,tree_hash:'c'.repeat(40)}),/BOUNDARY_BINDING_MISMATCH/);
+});
+
+
+test('execution planner denies any run without exact controller candidate and tree',()=>{
+  const agents=[{name:'codex',installed:true,authenticated:true,safe_for_researcher:true,ready_for_researcher:true}];
+  const providers=[{name:'p',available:true,authenticated:true,priority:1,capabilities:['research.search'],allowed_data_classes:['internal']}];
+  const plan=createExecutionPlan({task:task(),registry,capability_id:'research.search',action:'research_search',role:'researcher',agents,providers});
+  assert.equal(plan.executable,false); assert.equal(plan.authority.reason,'CONTROLLER_CANDIDATE_REQUIRED');
+});
+
+test('controller task binding is canonical and independent of object key order',()=>{
+  const original=task(); const proof=verified(original,'code.modify','build_local','builder');
+  const reordered={data_class:original.data_class,protected_actions:original.protected_actions,allowed_actions:original.allowed_actions,allowed_capabilities:original.allowed_capabilities,task_id:original.task_id};
+  const result=decideBoundaryAuthority({task:reordered,registry,capability_id:'code.modify',action:'build_local',role:'builder',evidence:[proof.item],controller_state:proof.state});
+  assert.equal(result.decision,'ALLOW_LOCAL');
+});
+
+
+test('verification evidence cannot exist without exact candidate and tree',()=>{
+  const boundTask=task();
+  const incomplete={task_id:boundTask.task_id,task:boundTask,candidate_sha:null,tree_hash:null};
+  assert.throws(()=>createBoundaryVerificationEvidence({state:incomplete,capability_id:'code.modify',action:'build_local',role:'builder'}),/BOUNDARY_EVIDENCE_CANDIDATE_REQUIRED/);
+  const result=decideBoundaryAuthority({task:boundTask,registry,capability_id:'code.modify',action:'build_local',role:'builder',evidence:[],controller_state:incomplete});
+  assert.equal(result.decision,'DENY'); assert.equal(result.reason,'VERIFICATION_STATE_REQUIRED');
+});
+
+test('policy set ordering does not change controller task identity',()=>{
+  const original=task(); const proof=verified(original,'code.modify','build_local','builder');
+  const reordered={...original,allowed_capabilities:[...original.allowed_capabilities].reverse(),allowed_actions:[...original.allowed_actions].reverse(),protected_actions:[...original.protected_actions].reverse()};
+  const result=decideBoundaryAuthority({task:reordered,registry,capability_id:'code.modify',action:'build_local',role:'builder',evidence:[proof.item],controller_state:proof.state});
+  assert.equal(result.decision,'ALLOW_LOCAL');
 });

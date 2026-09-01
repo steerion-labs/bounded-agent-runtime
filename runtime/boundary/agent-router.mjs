@@ -1,10 +1,10 @@
 const DEFAULT_PRIORITY = Object.freeze(['codex','claude','opencode','container','generic']);
 
 function ready(agent, role, capability) {
-  if (!agent?.installed) return false;
-  if (agent.authenticated === false) return false;
-  if (agent[`safe_for_${role}`] === false) return false;
-  if (agent[`ready_for_${role}`] === false) return false;
+  if (agent?.installed !== true) return false;
+  if (agent.authenticated !== true) return false;
+  if (agent[`safe_for_${role}`] !== true) return false;
+  if (agent[`ready_for_${role}`] !== true) return false;
   if (!capability.roles.includes(role)) return false;
   if (!capability.adapters.includes(agent.name)) return false;
   if (Array.isArray(agent.capabilities) && !agent.capabilities.includes(capability.id)) return false;

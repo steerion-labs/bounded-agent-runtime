@@ -1,5 +1,6 @@
 function providerReady(provider, capabilityId, dataClass) {
-  if (!provider?.available || provider.authenticated === false) return false;
+  if (!provider || typeof provider.name !== 'string' || !provider.name.trim()) return false;
+  if (provider.available !== true || provider.authenticated !== true) return false;
   if (!Array.isArray(provider.capabilities) || !provider.capabilities.includes(capabilityId)) return false;
   if (!Array.isArray(provider.allowed_data_classes) || !provider.allowed_data_classes.includes(dataClass)) return false;
   return true;
