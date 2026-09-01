@@ -132,7 +132,7 @@ bar status
 
 BAR refuses dirty source repositories and implicit full-repo write authority. The Builder works on a controller-created copy, BAR derives the candidate identity itself, verification runs separately, and the Reviewer receives an exact candidate copy.
 
-`auto` is resolved once when the task is created. BAR writes the concrete Builder and Reviewer adapters into the task before hashing authority. It never switches agents silently during a run. If the selected CLI is not authenticated, BAR fails closed and tells the operator to authenticate it.
+`auto` is resolved once when the task is created. BAR selects only adapters that are installed, authenticated when the provider exposes a login check, safe for the requested role, and task-configured when extra configuration is required. The concrete Builder and Reviewer adapters are written into the task before authority is hashed. BAR never switches agents silently during a run. Codex Builder auto-selection fails closed when local MCP/plugin/hook extensions are active; an operator may opt in explicitly with `--builder-allow-user-config` after reviewing that risk.
 
 ## Security posture
 

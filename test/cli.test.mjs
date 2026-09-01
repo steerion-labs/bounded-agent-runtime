@@ -110,3 +110,42 @@ test('auto adapter selection is deterministic and role-aware',async()=>{
   assert.equal(selectAvailableAdapter('reviewer',reviewerOnly),'ollama');
   assert.throws(()=>selectAvailableAdapter('builder',reviewerOnly),/AUTO_ADAPTER_UNAVAILABLE:builder/);
 });
+
+test('auto adapter selection skips unauthenticated or unsafe builders',async()=>{
+  const { selectAvailableAdapter } = await import('../runtime/adapters/registry.mjs');
+  const agents={codex:{installed:true,authenticated:true,safe_for_builder:false},claude:{installed:true,authenticated:false},opencode:{installed:true,authenticated:true},container:{installed:false},generic:{installed:false}};
+  assert.equal(selectAvailableAdapter('builder',agents),'opencode');
+  assert.equal(selectAvailableAdapter('reviewer',agents),'codex');
+});
+
+test('Codex builder user extensions fail closed without task opt-in',async()=>{
+  const { inspectCodexUserExtensions, assertCodexBuilderConfigAllowed } = await import('../runtime/adapters/codex-policy.mjs');
+  const home=fs.mkdtempSync(path.join(os.tmpdir(),'bar-codex-policy-'));
+  fs.writeFileSync(path.join(home,'config.toml'),'[mcp_servers.demo]\ncommand="demo"\n[features]\nhooks = true\n');
+  const env={...process.env,CODEX_HOME:home};
+  try {
+    const state=inspectCodexUserExtensions(env); assert.equal(state.risky,true); assert.ok(state.reasons.includes('mcp_servers')); assert.ok(state.reasons.includes('hooks'));
+    assert.throws(()=>assertCodexBuilderConfigAllowed({workers:{builder:{adapter:'codex'}}},env),/CODEX_USER_EXTENSIONS_ACTIVE/);
+    assert.doesNotThrow(()=>assertCodexBuilderConfigAllowed({workers:{builder:{adapter:'codex',allow_user_config:true}}},env));
+  } finally { fs.rmSync(home,{recursive:true,force:true}); }
+});
+
+test('Windows launcher preserves PATH directory precedence', async t => {
+  if (process.platform !== 'win32') return t.skip('Windows-specific launcher contract');
+  const { resolveLaunchCommand } = await import('../runtime/adapters/launcher.mjs');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'bar-path-order-'));
+  const first=path.join(root,'first'), second=path.join(root,'second'); fs.mkdirSync(first); fs.mkdirSync(second);
+  const target=path.join(first,'tool.js'); fs.writeFileSync(target,'');
+  fs.writeFileSync(path.join(first,'bar-order.cmd'),'@ECHO off\r\n"%dp0%\\tool.js" %*\r\n');
+  fs.writeFileSync(path.join(second,'bar-order.exe'),'not-a-real-exe');
+  const prevPath=process.env.PATH, prevExt=process.env.PATHEXT; process.env.PATH=`${first};${second};${prevPath}`; process.env.PATHEXT='.EXE;.COM;.BAT;.CMD';
+  try { const resolved=resolveLaunchCommand('bar-order',[]); assert.equal(resolved.command,process.execPath); assert.equal(path.normalize(resolved.args[0]),path.normalize(target)); }
+  finally { process.env.PATH=prevPath; if(prevExt===undefined) delete process.env.PATHEXT; else process.env.PATHEXT=prevExt; fs.rmSync(root,{recursive:true,force:true}); }
+});
+
+test('auto selection never picks an unconfigured container',async()=>{
+  const { selectAvailableAdapter } = await import('../runtime/adapters/registry.mjs');
+  const agents={codex:{installed:true,authenticated:true,safe_for_builder:false},claude:{installed:true,authenticated:false},opencode:{installed:true,authenticated:false},container:{installed:true,configured_for_builder:false},generic:{installed:false}};
+  assert.throws(()=>selectAvailableAdapter('builder',agents),/AUTO_ADAPTER_UNAVAILABLE:builder/);
+  agents.container.configured_for_builder=true; assert.equal(selectAvailableAdapter('builder',agents),'container');
+});

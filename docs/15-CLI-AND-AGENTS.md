@@ -39,7 +39,7 @@ The generated task binds source commit, Builder/Reviewer adapters, allowed paths
 
 BAR does not add Codex approval automation, Codex sandbox bypass, Claude permission bypass or OpenCode auto-approval flags.
 
-External agent authentication remains the responsibility of the installed CLI. `bar agents` proves executable discovery, not provider login. Authenticate the vendor CLI before a real task. BAR deliberately does not copy provider credentials into task files. Authentication failures are reported as `*_AUTH_REQUIRED`.
+External agent authentication remains the responsibility of the installed CLI. For Codex, Claude Code and OpenCode, `bar agents` also performs a bounded login/readiness probe when supported; this is a readiness signal, not a credential import. BAR deliberately does not copy provider credentials into task files. Authentication failures are reported as `*_AUTH_REQUIRED`.
 
 On Windows, BAR resolves native executables and standard npm `.cmd` shims to their underlying JS/EXE target without enabling shell execution. This is required for globally installed CLIs such as Codex and OpenCode.
 
@@ -66,6 +66,6 @@ Protected mode requires approver identity, public key path and pinned fingerprin
 
 ## Automatic adapter selection
 
-Use `--builder auto` or `--reviewer auto` when you want BAR to choose from installed adapters. Selection happens once during task creation, the concrete adapter is written into the task and therefore bound into task authority and evidence. BAR never switches adapters silently during `bar run`.
+Use `--builder auto` or `--reviewer auto` when you want BAR to choose from ready adapters. Selection happens once during task creation, the concrete adapter is written into the task and therefore bound into task authority and evidence. BAR never switches adapters silently during `bar run`.
 
-Priority is deterministic: Builder `codex -> claude -> opencode -> container -> generic`; Reviewer `codex -> claude -> opencode -> ollama -> container -> generic`. Installation detection does not prove provider authentication; an expired or missing login fails closed with an actionable auth error.
+Priority is deterministic: Builder `codex -> claude -> opencode -> container -> generic`; Reviewer `codex -> claude -> opencode -> ollama -> container -> generic`. Selection filters out known unauthenticated adapters, role-unsafe adapters and containers missing task-specific image/command configuration. Codex Builder selection also fails closed when local MCP/plugin/hook extensions are active. Use `--builder-allow-user-config` only as an explicit task-bound acceptance of that risk; Reviewer remains isolated with ignored user config.

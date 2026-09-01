@@ -42,7 +42,7 @@ function resolveContainerImage(image) {
 }
 function workerSpec(role, adapter) {
   const model=option(`--${role}-model`);
-  if(adapter!=='container') return {adapter,...(model?{model}:{})};
+  if(adapter!=='container') return {adapter,...(model?{model}:{}),...(role==='builder'&&adapter==='codex'&&has('--builder-allow-user-config')?{allow_user_config:true}:{})};
   const requested=option(`--${role}-image`), command=option(`--${role}-command`);
   if(!requested||!command) throw new Error(`CONTAINER_CONFIG_REQUIRED:${role}:use --${role}-image and --${role}-command`);
   const image=requested.includes('@sha256:')?requested:resolveContainerImage(requested);
@@ -51,11 +51,14 @@ function workerSpec(role, adapter) {
 
 function generateTask() {
   const repoArg = option('--repo'); const intent = option('--intent');
-  if (!repoArg || !intent) throw new Error('USAGE:bar task --repo <git-repo> --intent <text> [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--verify npm --verify-arg test] [--out task.json]');
+  if (!repoArg || !intent) throw new Error('USAGE:bar task --repo <git-repo> --intent <text> [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test] [--out task.json]');
   const repo = path.resolve(repoArg); const top = git(repo, ['rev-parse','--show-toplevel']);
   if (git(top, ['status','--porcelain=v1','--untracked-files=all'])) throw new Error('SOURCE_REPO_DIRTY:commit or stash changes before creating a bounded task');
   const requestedBuilder = option('--builder', 'demo'); const requestedReviewer = option('--reviewer', 'demo');
   const agents = doctorReport().agents;
+  agents.container.configured_for_builder = Boolean(option('--builder-image') && option('--builder-command'));
+  agents.container.configured_for_reviewer = Boolean(option('--reviewer-image') && option('--reviewer-command'));
+  if (has('--builder-allow-user-config') && agents.codex) agents.codex.safe_for_builder = true;
   const builder = requestedBuilder === 'auto' ? selectAvailableAdapter('builder', agents) : requestedBuilder;
   const reviewer = requestedReviewer === 'auto' ? selectAvailableAdapter('reviewer', agents) : requestedReviewer;
   assertAdapterName(builder, 'builder'); assertAdapterName(reviewer, 'reviewer');
@@ -143,7 +146,7 @@ function friendlyError(message) {
   return hit ? `${message}\nNEXT: ${hit[1]}` : message;
 }
 function help() {
-  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action>\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
+  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action>\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
 }
 
 try {

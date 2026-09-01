@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { buildAgentInvocation, parseReviewOutput } from './contracts.mjs';
 import { resolveLaunchCommand, classifyLaunchFailure } from './launcher.mjs';
+import { assertCodexBuilderConfigAllowed } from './codex-policy.mjs';
 
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 const { adapter, role, task, workspace, candidate, review_diff: reviewDiff = '', generic = null } = input;
@@ -38,6 +39,7 @@ function reviewerPrompt() {
 }
 
 
+if (adapter === 'codex' && role === 'builder') assertCodexBuilderConfigAllowed(task);
 const prompt = role === 'builder' ? builderPrompt() : reviewerPrompt();
 const call = buildAgentInvocation({adapter,role,task,workspace,prompt,generic});
 const launch = resolveLaunchCommand(call.command, call.args);

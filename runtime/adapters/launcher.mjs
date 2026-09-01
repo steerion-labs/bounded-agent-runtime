@@ -8,7 +8,8 @@ function existingFile(value) {
 function windowsCandidates(command) {
   if (path.isAbsolute(command)) return existingFile(command) ? [command] : [];
   const searchPath = process.env.PATH || process.env.Path || '';
-  const names = path.extname(command) ? [command] : [command, `${command}.exe`, `${command}.com`, `${command}.cmd`, `${command}.bat`];
+  const pathExt = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').map(x => x.trim().toLowerCase()).filter(Boolean);
+  const names = path.extname(command) ? [command] : pathExt.map(ext => `${command}${ext}`);
   const found = [];
   for (const dir of searchPath.split(';').map(x => x.trim()).filter(Boolean)) {
     for (const name of names) {
@@ -24,8 +25,11 @@ function resolveNpmCmdShim(file) {
   const base = path.dirname(file);
   const target = text.match(/"%dp0%\\([^"\r\n]+\.(?:exe|js))"\s+%\*/i)?.[1];
   if (!target) return null;
-  const resolved = path.join(base, ...target.split('\\'));
-  if (!existingFile(resolved)) return null;  return resolved.toLowerCase().endsWith('.js')
+  if (path.isAbsolute(target) || target.split('\\').includes('..')) return null;
+  const resolved = path.resolve(base, ...target.split('\\'));
+  const relative = path.relative(base, resolved);
+  if (relative.startsWith('..') || path.isAbsolute(relative) || !existingFile(resolved)) return null;
+  return resolved.toLowerCase().endsWith('.js')
     ? { command: process.execPath, prependArgs: [resolved] }
     : { command: resolved, prependArgs: [] };
 }
@@ -33,14 +37,15 @@ function resolveNpmCmdShim(file) {
 export function resolveLaunchCommand(command, args = []) {
   if (process.platform !== 'win32') return { command, args };
   const candidates = windowsCandidates(command);
-  const native = candidates.find(x => /\.(?:exe|com)$/i.test(x));
-  if (native) return { command: native, args };
-  for (const shim of candidates.filter(x => /\.cmd$/i.test(x))) {
-    const resolved = resolveNpmCmdShim(shim);
-    if (resolved) return { command: resolved.command, args: [...resolved.prependArgs, ...args] };
+  for (const candidate of candidates) {
+    if (/\.(?:exe|com)$/i.test(candidate)) return { command: candidate, args };
+    if (/\.cmd$/i.test(candidate)) {
+      const resolved = resolveNpmCmdShim(candidate);
+      if (resolved) return { command: resolved.command, args: [...resolved.prependArgs, ...args] };
+      continue;
+    }
+    if (!/\.bat$/i.test(candidate)) return { command: candidate, args };
   }
-  const direct = candidates.find(x => !/\.(?:cmd|bat)$/i.test(x));
-  if (direct) return { command: direct, args };
   return { command, args };
 }
 
