@@ -1,4 +1,12 @@
+import crypto from 'node:crypto';
+
 const TRUST_STATES = Object.freeze(['DISCOVERY_ONLY','VERIFIED']);
+
+function canonical(value) {
+  if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
+  if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key)+':'+canonical(value[key])).join(',') + '}';
+  return JSON.stringify(value);
+}
 
 function normalize(entry) {
   if (!entry || typeof entry !== 'object') throw new Error('BOUNDARY_PROVIDER_ENTRY_INVALID');
@@ -21,6 +29,7 @@ function normalize(entry) {
     notes: entry.notes ? String(entry.notes) : null
   });
 }
+
 export function createProviderRegistry(entries = []) {
   if (!Array.isArray(entries)) throw new Error('BOUNDARY_PROVIDER_REGISTRY_INVALID');
   const map = new Map();
@@ -29,8 +38,11 @@ export function createProviderRegistry(entries = []) {
     if (map.has(entry.id)) throw new Error(`BOUNDARY_PROVIDER_DUPLICATE:${entry.id}`);
     map.set(entry.id, entry);
   }
+  const snapshot=[...map.values()].sort((a,b)=>a.id.localeCompare(b.id));
+  const policy_sha256=crypto.createHash('sha256').update(canonical(snapshot)).digest('hex');
   return Object.freeze({
-    list: () => Object.freeze([...map.values()]),
+    policy_sha256,
+    list: () => Object.freeze([...snapshot]),
     require: id => {
       const entry = map.get(String(id || '').toLowerCase());
       if (!entry) throw new Error(`BOUNDARY_PROVIDER_UNKNOWN:${id}`);

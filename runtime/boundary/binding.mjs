@@ -16,12 +16,13 @@ export function boundaryBindingPayload(input) {
     role: String(input.role || ''),
     adapter: String(input.adapter || ''),
     provider: input.provider ? String(input.provider) : null,
+    provider_policy_hash: input.provider_policy_hash ? String(input.provider_policy_hash) : null,
     data_class: String(input.data_class || ''),
     candidate_sha: input.candidate_sha ? String(input.candidate_sha) : null,
     tree_hash: input.tree_hash ? String(input.tree_hash) : null,
     policy_version: String(input.policy_version || 'boundary-v0.1')
   };
-  if (!payload.task_id || !payload.capability_id || !payload.action || !payload.role || !payload.adapter || !payload.data_class || !payload.candidate_sha || !payload.tree_hash) {
+  if (!payload.task_id || !payload.capability_id || !payload.action || !payload.role || !payload.adapter || !payload.data_class || !payload.candidate_sha || !payload.tree_hash || (payload.provider && !payload.provider_policy_hash)) {
     throw new Error('BOUNDARY_BINDING_INVALID');
   }
   return Object.freeze(payload);
