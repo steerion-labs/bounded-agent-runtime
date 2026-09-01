@@ -20,10 +20,21 @@ function docker(args, options = {}) {
   return result;
 }
 
+function makeSeedWritable(target) {
+  if (process.platform === 'win32') return;
+  const visit = current => {
+    const stat = fs.lstatSync(current);
+    if (stat.isSymbolicLink()) return;
+    fs.chmodSync(current, stat.mode | (stat.isDirectory() ? 0o333 : 0o222));
+    if (stat.isDirectory()) for (const name of fs.readdirSync(current)) visit(path.join(current,name));
+  };
+  visit(target);
+}
 function copySeed(source, target) {
   fs.rmSync(target,{recursive:true,force:true});
   fs.mkdirSync(target,{recursive:true});
   fs.cpSync(source,target,{recursive:true,filter:src=>path.basename(src)!=='.git'});
+  makeSeedWritable(target);
 }
 function prompt() {
   if (role === 'builder') return [
