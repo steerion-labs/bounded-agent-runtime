@@ -11,6 +11,7 @@ export function createExecutionPlan({ task, registry, capability_id, action, rol
   const agentRoute = routeAgent({ role, capability, agents });
   let providerRoute = null;
   if (capability.network === 'external' || capability.credentials === 'provider') {
+    if (!provider_registry) throw new Error(`BOUNDARY_PROVIDER_REGISTRY_REQUIRED:${capability_id}`);
     providerRoute = routeProvider({ capability_id, data_class: task.data_class, providers, registry: provider_registry });
   }
   const binding = createBoundaryBinding({
