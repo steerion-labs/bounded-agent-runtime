@@ -30,7 +30,7 @@ The generated task binds source commit, Builder/Reviewer adapters, allowed paths
 
 | Adapter | Builder | Reviewer | Safety-oriented defaults |
 | --- | ---: | ---: | --- |
-| Codex | yes | yes | `workspace-write` Builder + ignored rules; `read-only` Reviewer + ignored user config/rules; ephemeral session |
+| Codex | explicit opt-in | yes | Builder uses reviewed user config with `workspace-write`; Reviewer uses `read-only` + ignored user config/rules; ephemeral session |
 | Claude Code | yes | yes | Safe Mode, no session persistence, edit-only Builder tools, plan/read Reviewer tools, strict MCP config |
 | OpenCode | yes | yes | `--pure`, explicit directory, never `--auto` |
 | Ollama | no | yes | explicit model required |
@@ -68,4 +68,4 @@ Protected mode requires approver identity, public key path and pinned fingerprin
 
 Use `--builder auto` or `--reviewer auto` when you want BAR to choose from ready adapters. Selection happens once during task creation, the concrete adapter is written into the task and therefore bound into task authority and evidence. BAR never switches adapters silently during `bar run`.
 
-Priority is deterministic: Builder `codex -> claude -> opencode -> container -> generic`; Reviewer `codex -> claude -> opencode -> ollama -> container -> generic`. Selection filters out known unauthenticated adapters, role-unsafe adapters and containers missing task-specific image/command configuration. Codex Builder selection also fails closed when local MCP/plugin/hook extensions are active. Use `--builder-allow-user-config` only as an explicit task-bound acceptance of that risk; Reviewer remains isolated with ignored user config.
+Priority is deterministic after safety filtering: Builder `codex -> claude -> opencode -> container -> generic`; Reviewer `codex -> claude -> opencode -> ollama -> container -> generic`. Codex Builder is marked unsafe for automatic selection in v0.5 and becomes eligible only when the operator supplies `--builder-allow-user-config`, which is a task-bound acceptance of the reviewed local Codex configuration. Reviewer remains isolated with ignored user config. Containers are eligible only with task-specific image and command configuration.

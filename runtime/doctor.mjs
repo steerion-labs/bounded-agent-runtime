@@ -43,7 +43,7 @@ export function doctorReport() {
     const executable = name === 'generic' ? process.env.BOUNDED_AGENT_GENERIC_EXECUTABLE || null : (name === 'demo' ? process.execPath : findExecutable(def.executable));
     const authenticated = probeAgentAuth(name, executable);
     agents[name] = { installed: Boolean(executable), executable, roles: def.roles, boundary: def.boundary || 'controller-enforced', ...(authenticated === null ? {} : { authenticated }) };
-    if (name === 'codex') agents[name].safe_for_builder = !codexPolicy.risky;
+    if (name === 'codex') { agents[name].safe_for_builder = false; agents[name].builder_requires_user_config_opt_in = true; agents[name].user_config_risks = codexPolicy.reasons; }
   }
   checks.push(row('runtime_state', fs.existsSync(STATE_FILE), fs.existsSync(STATE_FILE) ? STATE_FILE : 'not initialized', 'advisory'));
   checks.push(row('secret_zone', fs.existsSync(SECRETS_DIR), fs.existsSync(SECRETS_DIR) ? SECRETS_DIR : 'created on first runtime use', 'advisory'));

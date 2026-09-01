@@ -14,7 +14,7 @@ The controller independently derives Git commit/tree identity, detects workspace
 
 | Adapter | Builder | Reviewer | BAR default boundary | Unsafe defaults BAR does not use |
 | --- | ---: | ---: | --- | --- |
-| Codex | yes | yes | Builder: `workspace-write`, ignored rules; Reviewer: `read-only`, ignored user config/rules; ephemeral | `danger-full-access`, bypass flags |
+| Codex | explicit opt-in | yes | Builder: reviewed user config + `workspace-write`; Reviewer: `read-only`, ignored user config/rules; ephemeral | `danger-full-access`, bypass flags |
 | Claude Code | yes | yes | Safe Mode, no persistence, edit-only / plan+read tool sets, strict MCP config | `--dangerously-skip-permissions` |
 | OpenCode | yes | yes | non-interactive `run`, `--pure`, controller verification | auto-approve modes |
 | Ollama | no | yes | local reviewer only | builder authority |
@@ -63,10 +63,10 @@ BAR tests the invocation contract and safe defaults, but external CLIs evolve in
 
 ## Windows real-agent proof
 
-v0.5 adds shell-free resolution for npm Windows launchers. A real clean-repository smoke test reached `HUMAN_GATE_REQUIRED` with Codex as both Builder and Reviewer after controller-observed verification. Claude invocation was also exercised through its real CLI; provider authentication must be valid independently of BAR.
+v0.5 adds shell-free resolution for npm Windows launchers. The resolver was checked against the real installed npm shim forms for Codex and OpenCode. A real clean-repository smoke test reached `HUMAN_GATE_REQUIRED` with Codex Builder only under explicit reviewed user-config opt-in and Codex Reviewer isolated read-only. Claude invocation was also exercised through its real CLI; provider authentication must be valid independently of BAR.
 
 ## Automatic adapter selection
 
 Use `--builder auto` or `--reviewer auto` when you want BAR to choose from installed adapters. Selection happens once during task creation, the concrete adapter is written into the task and therefore bound into task authority and evidence. BAR never switches adapters silently during `bar run`.
 
-Priority is deterministic: Builder `codex -> claude -> opencode -> container -> generic`; Reviewer `codex -> claude -> opencode -> ollama -> container -> generic`. Installation detection does not prove provider authentication; an expired or missing login fails closed with an actionable auth error.
+Priority is deterministic after safety filtering: Builder `codex -> claude -> opencode -> container -> generic`; Reviewer `codex -> claude -> opencode -> ollama -> container -> generic`. Codex Builder is excluded from automatic selection unless the task explicitly includes `--builder-allow-user-config`. Installation detection does not prove provider authentication; an expired or missing login fails closed with an actionable auth error.

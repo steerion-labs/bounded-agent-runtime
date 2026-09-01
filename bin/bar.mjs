@@ -62,6 +62,7 @@ function generateTask() {
   const builder = requestedBuilder === 'auto' ? selectAvailableAdapter('builder', agents) : requestedBuilder;
   const reviewer = requestedReviewer === 'auto' ? selectAvailableAdapter('reviewer', agents) : requestedReviewer;
   assertAdapterName(builder, 'builder'); assertAdapterName(reviewer, 'reviewer');
+  if (builder === 'codex' && !has('--builder-allow-user-config')) throw new Error('CODEX_BUILDER_EXPLICIT_OPT_IN_REQUIRED:use --builder-allow-user-config only after reviewing local Codex user extensions');
   if (requestedBuilder === 'auto') console.log(`AUTO_SELECTED builder=${builder}`);
   if (requestedReviewer === 'auto') console.log(`AUTO_SELECTED reviewer=${reviewer}`);
   const repoEntries = git(top, ['ls-tree','--name-only','HEAD']).split(/\r?\n/).filter(Boolean);

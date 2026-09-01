@@ -21,7 +21,9 @@ export function inspectCodexUserExtensions(env = process.env) {
 
 export function assertCodexBuilderConfigAllowed(task, env = process.env) {
   const worker = task?.workers?.builder;
-  if (worker?.adapter !== 'codex' || worker?.allow_user_config === true) return;
+  if (worker?.adapter !== 'codex') return;
+  if (worker?.allow_user_config === true) return;
   const state = inspectCodexUserExtensions(env);
-  if (state.risky) throw new Error(`CODEX_USER_EXTENSIONS_ACTIVE:${state.reasons.join(',')}:recreate task with --builder-allow-user-config only after reviewing this risk`);
+  const detail = state.risky ? state.reasons.join(',') : 'user-config-required-for-workspace-write';
+  throw new Error(`CODEX_BUILDER_EXPLICIT_OPT_IN_REQUIRED:${detail}:recreate task with --builder-allow-user-config only after reviewing this risk`);
 }
