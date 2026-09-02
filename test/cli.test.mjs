@@ -44,6 +44,11 @@ test('dashboard serves sanitized status on loopback',async()=>{
     const response=await getLocal(address.port,'/api/status'); assert.equal(response.status,200);
     const body=JSON.parse(response.body); assert.equal(typeof body.state,'string'); assert.equal('signature' in body,false);
     const page=await getLocal(address.port,'/'); assert.equal(page.status,200); assert.match(page.body,/Read-only local control view/);
+    assert.match(page.body,/Evidence timeline/); assert.match(page.body,/<th>Time<\/th><th>Status<\/th>/);
+    assert.match(page.body,/candidate_sha/); assert.match(page.body,/tree_hash/);
+    assert.doesNotMatch(page.body,/<form|<button|\/approve|\/authorize|\/merge|\/deploy/i);
+    const denied=await new Promise((resolve,reject)=>{const req=http.request({hostname:'127.0.0.1',port:address.port,path:'/api/status',method:'POST',headers:{connection:'close'}},res=>{res.resume();res.on('end',()=>resolve(res.statusCode));});req.on('error',reject);req.end();});
+    assert.equal(denied,405);
   } finally { server.closeAllConnections?.(); await new Promise(resolve=>server.close(resolve)); }
 });
 
