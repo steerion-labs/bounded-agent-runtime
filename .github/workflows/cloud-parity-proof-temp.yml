@@ -1,15 +1,15 @@
 name: Temporary BAR cloud parity proof
 
 on:
-  pull_request:
-    branches: [main]
+  push:
+    branches:
+      - chore/cloud-first-work-mode-20260903
 
 permissions:
   contents: read
 
 jobs:
   proof:
-    if: github.event.pull_request.number == 19
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
