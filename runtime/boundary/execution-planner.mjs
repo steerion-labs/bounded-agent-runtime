@@ -3,37 +3,38 @@ import { createBoundaryBinding } from './binding.mjs';
 import { routeAgent } from './agent-router.mjs';
 import { routeProvider } from './provider-router.mjs';
 
-export function createExecutionPlan({ task, registry, capability_id, action, role, agents, providers = [], controller_state = null, evidence = [], policy_version = 'boundary-v0.1' }) {
-  if (!controller_state?.candidate_sha || !controller_state?.tree_hash) return Object.freeze({ executable: false, authority: Object.freeze({ decision: AUTHORITY_DECISIONS.DENY, reason: 'CONTROLLER_CANDIDATE_REQUIRED' }), binding: null });
+export function createExecutionPlan({ task, registry, capability_id, action, role, agents, providers = [], provider_registry = null, controller_state = null, evidence = [], policy_version = 'boundary-v0.1' }) {
+  if (!controller_state?.candidate_sha || !controller_state?.tree_hash) return Object.freeze({ executable:false, authority:Object.freeze({decision:AUTHORITY_DECISIONS.DENY,reason:'CONTROLLER_CANDIDATE_REQUIRED'}), binding:null });
   const authority = decideBoundaryAuthority({ task, registry, capability_id, action, role, evidence, controller_state });
-  if (authority.decision === AUTHORITY_DECISIONS.DENY) return Object.freeze({ executable: false, authority, binding: null });
+  if (authority.decision === AUTHORITY_DECISIONS.DENY) return Object.freeze({ executable:false, authority, binding:null });
   const capability = registry.require(capability_id);
   const agentRoute = routeAgent({ role, capability, agents });
   let providerRoute = null;
+  let providerPolicyHash = null;
   if (capability.network === 'external' || capability.credentials === 'provider') {
-    providerRoute = routeProvider({ capability_id, data_class: task.data_class, providers });
+    if (!provider_registry?.policy_sha256) return Object.freeze({ executable:false, authority:Object.freeze({decision:AUTHORITY_DECISIONS.DENY,reason:'PROVIDER_REGISTRY_REQUIRED'}), binding:null });
+    providerPolicyHash = provider_registry.policy_sha256;
+    if (controller_state.provider_policy_hash !== providerPolicyHash) return Object.freeze({ executable:false, authority:Object.freeze({decision:AUTHORITY_DECISIONS.DENY,reason:'PROVIDER_POLICY_MISMATCH'}), binding:null });
+    providerRoute = routeProvider({ capability_id, data_class:task.data_class, providers, registry:provider_registry });
   }
   const binding = createBoundaryBinding({
-    task_id: task.task_id,
-    capability_id,
-    action,
-    role,
-    adapter: agentRoute.adapter,
-    provider: providerRoute?.provider || null,
-    data_class: task.data_class,
-    candidate_sha: controller_state?.candidate_sha ?? null,
-    tree_hash: controller_state?.tree_hash ?? null,
+    task_id:task.task_id, capability_id, action, role,
+    adapter:agentRoute.adapter, provider:providerRoute?.provider || null,
+    provider_policy_hash:providerPolicyHash, data_class:task.data_class,
+    candidate_sha:controller_state.candidate_sha, tree_hash:controller_state.tree_hash,
     policy_version
-  });  return Object.freeze({
-    executable: authority.decision === AUTHORITY_DECISIONS.ALLOW_LOCAL,
-    human_gate_required: authority.decision === AUTHORITY_DECISIONS.HUMAN_GATE_REQUIRED,
+  });
+  return Object.freeze({
+    executable:authority.decision === AUTHORITY_DECISIONS.ALLOW_LOCAL,
+    human_gate_required:authority.decision === AUTHORITY_DECISIONS.HUMAN_GATE_REQUIRED,
     authority,
     binding,
-    route: Object.freeze({ agent: agentRoute, provider: providerRoute }),
-    capability: capability.id,
-    isolation: capability.isolation,
-    network: capability.network,
-    credentials: capability.credentials,
-    data_class: task.data_class
+    route:Object.freeze({agent:agentRoute,provider:providerRoute}),
+    capability:capability.id,
+    isolation:capability.isolation,
+    network:capability.network,
+    credentials:capability.credentials,
+    data_class:task.data_class,
+    provider_policy_hash:providerPolicyHash
   });
 }

@@ -76,6 +76,28 @@ The following projects are evaluation candidates, not trusted dependencies:
 | Vane | Which research/RAG capabilities meet source-quality and isolation requirements? |
 | ComfyUI | Can media generation operate as an isolated capability service? |
 
+## Provider intelligence and free-tier intake
+
+Community catalogs such as `cheahjs/free-llm-api-resources` are discovery feeds, not policy authorities. Boundary may ingest provider names from them, but every imported entry starts as `DISCOVERY_ONLY`, disabled and with no permitted data classes or capabilities.
+
+Promotion is explicit:
+
+```text
+DISCOVERY_ONLY
+  -> official provider documentation verified
+  -> privacy / data-use policy classified
+  -> authentication and API compatibility verified
+  -> allowed capabilities + data classes assigned
+  -> VERIFIED but disabled
+  -> explicit enablement
+  -> routable provider
+```
+
+The example discovery registry currently tracks OpenRouter, Google AI Studio, NVIDIA NIM, Mistral, Hugging Face Inference Providers, Vercel AI Gateway, Kilo Gateway, OpenCode Zen, Cerebras, Groq, Cohere, GitHub Models and Cloudflare Workers AI. No current rate-limit or free-tier claim is treated as durable authority because those terms can change independently of Boundary.
+
+A runtime provider must also be currently available and authenticated. Registry trust never substitutes for runtime readiness. Conversely, runtime availability never substitutes for registry approval. Both are required.`r`n`r`nFor external/provider-backed capabilities the registry is mandatory. Boundary hashes the canonical provider policy, requires the controller state to carry the same `provider_policy_hash`, and includes that hash in the execution binding. Missing registry state or policy-hash drift fails closed before provider routing.
+
+Provider selection remains deterministic and pre-execution. The chosen provider is bound into the execution identity. Rate limits, cost or availability changing during execution do not authorize silent fallback to another provider.
 ## Non-goals for v0.1
 
 Steerion Boundary v0.1 does not install external skills, grant autonomous merge/deploy/release, copy provider credentials, replace BAR Human Gate, or allow a model to edit its own authority policy.

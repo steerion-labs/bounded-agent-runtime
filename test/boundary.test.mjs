@@ -6,6 +6,7 @@ import { decideBoundaryAuthority } from '../runtime/boundary/authority-engine.mj
 import { createBoundaryBinding, assertBoundaryBinding, assertNoAdapterFallback, assertNoProviderFallback } from '../runtime/boundary/binding.mjs';
 import { routeAgent } from '../runtime/boundary/agent-router.mjs';
 import { routeProvider } from '../runtime/boundary/provider-router.mjs';
+import { createProviderRegistry, promoteProvider, enableVerifiedProvider } from '../runtime/boundary/provider-registry.mjs';
 import { createExecutionPlan } from '../runtime/boundary/execution-planner.mjs';
 import { observeImprovementSignals } from '../runtime/boundary/improvement-observer.mjs';
 import { assessSkillCandidate } from '../runtime/boundary/skill-intake.mjs';
@@ -60,7 +61,7 @@ test('protected capability action routes to Human Gate',()=>{
 });
 
 test('binding detects mutation and blocks adapter or provider fallback',()=>{
-  const input={task_id:'t1',capability_id:'research.search',action:'research_search',role:'researcher',adapter:'codex',provider:'p1',data_class:'internal',candidate_sha:'a'.repeat(40),tree_hash:'b'.repeat(40)};
+  const input={task_id:'t1',capability_id:'research.search',action:'research_search',role:'researcher',adapter:'codex',provider:'p1',provider_policy_hash:'d'.repeat(64),data_class:'internal',candidate_sha:'a'.repeat(40),tree_hash:'b'.repeat(40)};
   const binding=createBoundaryBinding(input);
   assert.equal(assertBoundaryBinding(binding,input),true);
   assert.throws(()=>assertBoundaryBinding(binding,{...input,adapter:'claude'}),/BOUNDARY_BINDING_MISMATCH/);
@@ -123,9 +124,11 @@ test('authority enforces task data classification against capability policy',()=
 
 test('execution planner deterministically routes and binds agent plus provider',()=>{
   const agents=[{name:'codex',installed:true,authenticated:true,safe_for_researcher:true,ready_for_researcher:true}];
-  const providers=[{name:'internal-provider',available:true,authenticated:true,priority:1,capabilities:['research.search'],allowed_data_classes:['internal']}];
-  const boundTask=task(); const state=controllerState(boundTask);
-  const plan=createExecutionPlan({task:boundTask,registry,capability_id:'research.search',action:'research_search',role:'researcher',agents,providers,controller_state:state});
+  const providers=[{name:'internal-provider',available:true,authenticated:true,priority:1}];
+  const verifiedProvider=enableVerifiedProvider(promoteProvider({id:'internal-provider',trust:'DISCOVERY_ONLY'},{official_docs:'https://example.invalid/official',allowed_data_classes:['internal'],capabilities:['research.search']}));
+  const providerRegistry=createProviderRegistry([verifiedProvider]);
+  const boundTask=task(); const state={...controllerState(boundTask),provider_policy_hash:providerRegistry.policy_sha256};
+  const plan=createExecutionPlan({task:boundTask,registry,capability_id:'research.search',action:'research_search',role:'researcher',agents,providers,provider_registry:providerRegistry,controller_state:state});
   assert.equal(plan.executable,true);
   assert.equal(plan.route.agent.adapter,'codex'); assert.equal(plan.route.provider.provider,'internal-provider');
   assert.equal(plan.binding.adapter,'codex'); assert.equal(plan.binding.provider,'internal-provider');
@@ -156,7 +159,7 @@ test('provider router rejects nameless or unknown-auth providers',()=>{
 });
 
 test('binding covers data class and exact candidate tree identity',()=>{
-  const input={task_id:'t1',capability_id:'research.search',action:'research_search',role:'researcher',adapter:'codex',provider:'p1',data_class:'internal',candidate_sha:'a'.repeat(40),tree_hash:'b'.repeat(40)};
+  const input={task_id:'t1',capability_id:'research.search',action:'research_search',role:'researcher',adapter:'codex',provider:'p1',provider_policy_hash:'d'.repeat(64),data_class:'internal',candidate_sha:'a'.repeat(40),tree_hash:'b'.repeat(40)};
   const binding=createBoundaryBinding(input);
   assert.throws(()=>assertBoundaryBinding(binding,{...input,data_class:'public'}),/BOUNDARY_BINDING_MISMATCH/);
   assert.throws(()=>assertBoundaryBinding(binding,{...input,tree_hash:'c'.repeat(40)}),/BOUNDARY_BINDING_MISMATCH/);
@@ -191,4 +194,55 @@ test('policy set ordering does not change controller task identity',()=>{
   const reordered={...original,allowed_capabilities:[...original.allowed_capabilities].reverse(),allowed_actions:[...original.allowed_actions].reverse(),protected_actions:[...original.protected_actions].reverse()};
   const result=decideBoundaryAuthority({task:reordered,registry,capability_id:'code.modify',action:'build_local',role:'builder',evidence:[proof.item],controller_state:proof.state});
   assert.equal(result.decision,'ALLOW_LOCAL');
+});
+
+test('community provider catalog entries are discovery-only and never routable',()=>{
+  const catalog=JSON.parse(fs.readFileSync(new URL('../examples/provider-discovery.example.json',import.meta.url),'utf8'));
+  const providerRegistry=createProviderRegistry(catalog.providers);
+  assert.equal(providerRegistry.list().length,14);
+  assert.equal(providerRegistry.routable('groq'),false);
+  assert.throws(()=>routeProvider({capability_id:'research.search',data_class:'public',providers:[{name:'groq',available:true,authenticated:true}],registry:providerRegistry}),/BOUNDARY_PROVIDER_UNAVAILABLE/);
+});
+
+test('provider promotion requires official verification and explicit enablement',()=>{
+  const discovered={id:'groq',display_name:'Groq',source:'community-catalog',trust:'DISCOVERY_ONLY',enabled:false};
+  assert.throws(()=>promoteProvider(discovered,{}),/OFFICIAL_VERIFICATION_REQUIRED/);
+  const verified=promoteProvider(discovered,{official_docs:'https://example.invalid/official',allowed_data_classes:['public'],capabilities:['research.search']});
+  assert.equal(verified.trust,'VERIFIED'); assert.equal(verified.enabled,false);
+  const enabled=enableVerifiedProvider(verified); assert.equal(enabled.enabled,true);
+  const providerRegistry=createProviderRegistry([enabled]);
+  const route=routeProvider({capability_id:'research.search',data_class:'public',providers:[{name:'groq',available:true,authenticated:true,priority:1}],registry:providerRegistry});
+  assert.equal(route.provider,'groq'); assert.equal(route.registry_enforced,true);
+});
+
+test('provider registry prevents data-class escalation and silent free-provider substitution',()=>{
+  const verified=enableVerifiedProvider(promoteProvider({id:'public-free',trust:'DISCOVERY_ONLY'},{official_docs:'https://example.invalid/official',allowed_data_classes:['public'],capabilities:['research.search']}));
+  const providerRegistry=createProviderRegistry([verified]);
+  assert.throws(()=>routeProvider({capability_id:'research.search',data_class:'internal',providers:[{name:'public-free',available:true,authenticated:true}],registry:providerRegistry}),/BOUNDARY_PROVIDER_UNAVAILABLE/);
+});
+
+test('external provider execution requires controller-bound provider registry',()=>{
+  const agents=[{name:'codex',installed:true,authenticated:true,safe_for_researcher:true,ready_for_researcher:true}];
+  const providers=[{name:'pp',available:true,authenticated:true,priority:1}];
+  const boundTask=task(); const state=controllerState(boundTask);
+  const missing=createExecutionPlan({task:boundTask,registry,capability_id:'research.search',action:'research_search',role:'researcher',agents,providers,controller_state:state});
+  assert.equal(missing.executable,false); assert.equal(missing.authority.reason,'PROVIDER_REGISTRY_REQUIRED');
+});
+
+test('provider policy hash drift fails closed before routing',()=>{
+  const agents=[{name:'codex',installed:true,authenticated:true,safe_for_researcher:true,ready_for_researcher:true}];
+  const providers=[{name:'pp',available:true,authenticated:true,priority:1}];
+  const enabled=enableVerifiedProvider(promoteProvider({id:'pp',trust:'DISCOVERY_ONLY'},{official_docs:'https://example.invalid/official',allowed_data_classes:['internal'],capabilities:['research.search']}));
+  const providerRegistry=createProviderRegistry([enabled]);
+  const boundTask=task(); const state={...controllerState(boundTask),provider_policy_hash:'f'.repeat(64)};
+  const plan=createExecutionPlan({task:boundTask,registry,capability_id:'research.search',action:'research_search',role:'researcher',agents,providers,provider_registry:providerRegistry,controller_state:state});
+  assert.equal(plan.executable,false); assert.equal(plan.authority.reason,'PROVIDER_POLICY_MISMATCH');
+});
+test('raw provider input cannot self-assert VERIFIED authority',()=>{
+  const forged={
+    id:'forged-free', trust:'VERIFIED', enabled:true,
+    official_docs:'https://attacker.invalid/claim',
+    capabilities:['research.search'], allowed_data_classes:['public']
+  };
+  assert.throws(()=>createProviderRegistry([forged]),/BOUNDARY_PROVIDER_VERIFIED_INPUT_FORBIDDEN/);
 });
