@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 
 const TRUST_STATES = Object.freeze(['DISCOVERY_ONLY','VERIFIED']);
+const VERIFIED_PROVIDER_MARK = Symbol('boundary.provider.verified');
 
 function canonical(value) {
   if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
@@ -8,14 +9,16 @@ function canonical(value) {
   return JSON.stringify(value);
 }
 
-function normalize(entry) {
+function normalize(entry, { verifiedSource = false } = {}) {
   if (!entry || typeof entry !== 'object') throw new Error('BOUNDARY_PROVIDER_ENTRY_INVALID');
   const id = String(entry.id || '').trim().toLowerCase();
   if (!/^[a-z0-9][a-z0-9._-]{1,63}$/.test(id)) throw new Error(`BOUNDARY_PROVIDER_ID_INVALID:${id || 'missing'}`);
   const trust = String(entry.trust || 'DISCOVERY_ONLY').toUpperCase();
   if (!TRUST_STATES.includes(trust)) throw new Error(`BOUNDARY_PROVIDER_TRUST_INVALID:${id}`);
+  const isVerifiedSource = verifiedSource || entry[VERIFIED_PROVIDER_MARK] === true;
+  if (trust === 'VERIFIED' && !isVerifiedSource) throw new Error(`BOUNDARY_PROVIDER_VERIFIED_INPUT_FORBIDDEN:${id}`);
   const allowed = Array.isArray(entry.allowed_data_classes) ? [...new Set(entry.allowed_data_classes.map(String))] : [];
-  return Object.freeze({
+  const normalized = {
     id,
     display_name: String(entry.display_name || id),
     source: String(entry.source || ''),
@@ -27,7 +30,11 @@ function normalize(entry) {
     allowed_data_classes: Object.freeze(allowed),
     cost_class: String(entry.cost_class || 'unknown'),
     notes: entry.notes ? String(entry.notes) : null
-  });
+  };
+  if (trust === 'VERIFIED' && isVerifiedSource) {
+    Object.defineProperty(normalized, VERIFIED_PROVIDER_MARK, { value:true, enumerable:false });
+  }
+  return Object.freeze(normalized);
 }
 
 export function createProviderRegistry(entries = []) {
@@ -50,7 +57,7 @@ export function createProviderRegistry(entries = []) {
     },
     routable: id => {
       const entry = map.get(String(id || '').toLowerCase());
-      return Boolean(entry && entry.trust === 'VERIFIED' && entry.enabled === true);
+      return Boolean(entry && entry.trust === 'VERIFIED' && entry.enabled === true && entry[VERIFIED_PROVIDER_MARK] === true);
     }
   });
 }
@@ -58,13 +65,13 @@ export function createProviderRegistry(entries = []) {
 export function promoteProvider(entry, { official_docs, allowed_data_classes = [], capabilities = [] } = {}) {
   const base = normalize(entry);
   if (!official_docs) throw new Error(`BOUNDARY_PROVIDER_OFFICIAL_VERIFICATION_REQUIRED:${base.id}`);
-  return normalize({ ...base, official_docs, trust:'VERIFIED', enabled:false, allowed_data_classes, capabilities });
+  return normalize({ ...base, official_docs, trust:'VERIFIED', enabled:false, allowed_data_classes, capabilities }, { verifiedSource:true });
 }
 
 export function enableVerifiedProvider(entry) {
   const base = normalize(entry);
-  if (base.trust !== 'VERIFIED') throw new Error(`BOUNDARY_PROVIDER_NOT_VERIFIED:${base.id}`);
+  if (base.trust !== 'VERIFIED' || base[VERIFIED_PROVIDER_MARK] !== true) throw new Error(`BOUNDARY_PROVIDER_NOT_VERIFIED:${base.id}`);
   if (!base.official_docs) throw new Error(`BOUNDARY_PROVIDER_OFFICIAL_VERIFICATION_REQUIRED:${base.id}`);
   if (!base.capabilities.length || !base.allowed_data_classes.length) throw new Error(`BOUNDARY_PROVIDER_POLICY_REQUIRED:${base.id}`);
-  return normalize({ ...base, enabled:true });
+  return normalize({ ...base, enabled:true }, { verifiedSource:true });
 }

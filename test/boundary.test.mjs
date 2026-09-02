@@ -238,3 +238,11 @@ test('provider policy hash drift fails closed before routing',()=>{
   const plan=createExecutionPlan({task:boundTask,registry,capability_id:'research.search',action:'research_search',role:'researcher',agents,providers,provider_registry:providerRegistry,controller_state:state});
   assert.equal(plan.executable,false); assert.equal(plan.authority.reason,'PROVIDER_POLICY_MISMATCH');
 });
+test('raw provider input cannot self-assert VERIFIED authority',()=>{
+  const forged={
+    id:'forged-free', trust:'VERIFIED', enabled:true,
+    official_docs:'https://attacker.invalid/claim',
+    capabilities:['research.search'], allowed_data_classes:['public']
+  };
+  assert.throws(()=>createProviderRegistry([forged]),/BOUNDARY_PROVIDER_VERIFIED_INPUT_FORBIDDEN/);
+});
