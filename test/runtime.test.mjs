@@ -15,7 +15,7 @@ import { assertAdapterName } from '../runtime/adapters/registry.mjs';
 import { hostMatches, isPrivateAddress, checkNetworkTarget, assertNetworkMethod, validateNetworkPolicy } from '../runtime/network-policy.mjs';
 import { handleMcpRequest } from '../runtime/mcp-server.mjs';
 import { createDashboardServer } from '../runtime/dashboard.mjs';
-import { doctorReport } from '../runtime/doctor.mjs';
+import { doctorReport, probeAgentVersion } from '../runtime/doctor.mjs';
 
 test('illegal transitions fail closed', () => assert.throws(() => assertTransition('NEW','BUILDING'), /ILLEGAL_TRANSITION/));
 test('unknown capability is denied', () => assert.throws(() => authorize({allowed_actions:['build_local'],protected_actions:[]}, 'remote_mutation'), /CAPABILITY_DENIED/));
@@ -96,6 +96,22 @@ test('MCP bridge exposes observation tools but no protected authority', () => {
 
 test('dashboard refuses non-loopback bind addresses', () => {
   assert.throws(() => createDashboardServer({host:'0.0.0.0',port:0}), /DASHBOARD_LOOPBACK_ONLY/);
+});
+
+test('agent version probing is bounded and strips project authority', () => {
+  process.env.BOUNDED_AGENT_TEST_SECRET='must-not-leak';
+  let seen;
+  const spawn=(command,args,options)=>{ seen={command,args,options}; return {status:0,stdout:'codex-cli 1.2.3\n',stderr:''}; };
+  const result=probeAgentVersion('codex','codex',spawn);
+  delete process.env.BOUNDED_AGENT_TEST_SECRET;
+  assert.equal(result.version,'codex-cli 1.2.3'); assert.equal(result.version_probe,'ok');
+  assert.equal(seen.options.timeout,2000); assert.equal(seen.options.cwd,os.tmpdir());
+  assert.equal('BOUNDED_AGENT_TEST_SECRET' in seen.options.env,false);
+});
+test('agent version probing fails closed on timeout, missing executable and invalid output', () => {
+  assert.equal(probeAgentVersion('codex',null).version_probe,'not_installed');
+  assert.equal(probeAgentVersion('codex','codex',()=>({status:null,error:{code:'ETIMEDOUT'}})).version_probe,'timeout');
+  assert.equal(probeAgentVersion('codex','codex',()=>({status:0,stdout:'',stderr:''})).version_probe,'invalid_output');
 });
 
 test('doctor is explicit that broker is not worker egress enforcement', () => {

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { RUNTIME_ROOT, STATE_FILE, SECRETS_DIR } from './core.mjs';
 import { adapterDefinitions } from './adapters/registry.mjs';
@@ -11,6 +12,26 @@ function findExecutable(name) {
   const result = spawnSync(command, [name], { encoding: 'utf8', windowsHide: true });
   if (result.status !== 0) return null;
   return String(result.stdout).split(/\r?\n/).find(Boolean) ?? null;
+}
+
+const VERSION_ARGS = Object.freeze({ codex:['--version'], claude:['--version'], opencode:['--version'], ollama:['--version'], container:['--version'] });
+function versionProbeEnv() {
+  const env = {};
+  for (const key of ['PATH','Path','PATHEXT','SystemRoot','ComSpec','TEMP','TMP','HOME','USERPROFILE']) if (process.env[key]) env[key] = process.env[key];
+  return env;
+}
+export function probeAgentVersion(name, executable, spawn = spawnSync) {
+  if (name === 'demo') return { version: `v${process.versions.node}`, version_probe: 'builtin' };
+  const args = VERSION_ARGS[name];
+  if (!executable || !args) return { version: null, version_probe: executable ? 'unsupported' : 'not_installed' };
+  let result;
+  try { result = spawn(executable, args, { encoding:'utf8', windowsHide:true, timeout:2000, cwd:os.tmpdir(), env:versionProbeEnv() }); }
+  catch { return { version:null, version_probe:'failed' }; }
+  if (result?.error?.code === 'ETIMEDOUT') return { version:null, version_probe:'timeout' };
+  if (result?.status !== 0) return { version:null, version_probe:'failed' };
+  const line = String(result.stdout || result.stderr || '').split(/\r?\n/).map(x=>x.trim()).find(Boolean);
+  if (!line || line.length > 200 || /[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(line)) return { version:null, version_probe:'invalid_output' };
+  return { version: line, version_probe:'ok' };
 }
 
 function probeAgentAuth(name, executable) {
@@ -42,7 +63,8 @@ export function doctorReport() {
   for (const [name, def] of Object.entries(adapterDefinitions())) {
     const executable = name === 'generic' ? process.env.BOUNDED_AGENT_GENERIC_EXECUTABLE || null : (name === 'demo' ? process.execPath : findExecutable(def.executable));
     const authenticated = probeAgentAuth(name, executable);
-    agents[name] = { installed: Boolean(executable), executable, roles: def.roles, boundary: def.boundary || 'controller-enforced', ...(authenticated === null ? {} : { authenticated }) };
+    const version = probeAgentVersion(name, executable);
+    agents[name] = { installed: Boolean(executable), executable, roles: def.roles, boundary: def.boundary || 'controller-enforced', ...version, ...(authenticated === null ? {} : { authenticated }) };
     if (name === 'codex') { agents[name].safe_for_builder = false; agents[name].builder_requires_user_config_opt_in = true; agents[name].user_config_risks = codexPolicy.reasons; }
   }
   checks.push(row('runtime_state', fs.existsSync(STATE_FILE), fs.existsSync(STATE_FILE) ? STATE_FILE : 'not initialized', 'advisory'));
