@@ -15,8 +15,9 @@ test('diagnostic version probe environment excludes credentials and user config'
   assert.equal(env.CI, '1');
 });
 
-test('version parser accepts bounded version-like output and rejects noise', () => {
+test('version parser finds bounded version-like output without trusting noise', () => {
   assert.equal(parseVersionOutput('codex-cli 0.150.1\n', ''), 'codex-cli 0.150.1');
+  assert.equal(parseVersionOutput('Warning: daemon offline\nclient version 0.33.1\n', ''), 'client version 0.33.1');
   assert.equal(parseVersionOutput('not a version\n', ''), null);
   assert.equal(parseVersionOutput('x'.repeat(161) + ' 1.2\n', ''), null);
 });
@@ -26,6 +27,23 @@ test('missing executable is reported without executing anything', () => {
   const result = probeAgentVersion('codex', null, { spawn: () => { called = true; }, resolve });
   assert.deepEqual(result, { version: null, version_probe: 'NOT_INSTALLED' });
   assert.equal(called, false);
+});
+
+test('version probe uses bounded minimal execution context', () => {
+  let observed;
+  const result = probeAgentVersion('codex', 'codex', {
+    resolve,
+    spawn: (command, args, options) => {
+      observed = { command, args, options };
+      return { status: 0, stdout: 'codex-cli 0.150.1\n', stderr: '' };
+    }
+  });
+  assert.equal(result.version_probe, 'PASS');
+  assert.equal(observed.command, 'fake-agent');
+  assert.deepEqual(observed.args, ['--version']);
+  assert.equal(observed.options.timeout, 5000);
+  assert.equal(observed.options.env.GITHUB_TOKEN, undefined);
+  assert.equal(observed.options.env.CI, '1');
 });
 
 test('version probe fails closed on timeout or nonzero exit', () => {
