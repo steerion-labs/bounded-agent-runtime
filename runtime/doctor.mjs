@@ -37,8 +37,9 @@ export function diagnosticProbeEnv(source = process.env) {
 }
 
 export function parseVersionOutput(stdout = '', stderr = '') {
-  const line = `${stdout}\n${stderr}`.split(/\r?\n/).map(value => value.trim()).find(Boolean);
-  if (!line || line.length > 160 || !/\d+\.\d+/.test(line)) return null;
+  const lines = `${stdout}\n${stderr}`.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+  const line = lines.find(value => value.length <= 160 && /\d+\.\d+/.test(value));
+  if (!line) return null;
   return line.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 160);
 }
 
@@ -52,7 +53,7 @@ export function probeAgentVersion(name, executable, { spawn = spawnSync, resolve
       cwd: os.tmpdir(),
       encoding: 'utf8',
       windowsHide: true,
-      timeout: 3000,
+      timeout: 5000,
       env: diagnosticProbeEnv()
     });
     if (result?.error || result?.status !== 0) return Object.freeze({ version: null, version_probe: 'FAILED' });
