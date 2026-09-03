@@ -42,12 +42,12 @@ export function parseVersionOutput(stdout = '', stderr = '') {
   return line.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 160);
 }
 
-export function probeAgentVersion(name, executable, { spawn = spawnSync } = {}) {
+export function probeAgentVersion(name, executable, { spawn = spawnSync, resolve = resolveLaunchCommand } = {}) {
   if (!executable) return Object.freeze({ version: null, version_probe: 'NOT_INSTALLED' });
   if (name === 'demo') return Object.freeze({ version: `node ${process.versions.node}`, version_probe: 'PASS' });
   if (name === 'generic') return Object.freeze({ version: null, version_probe: 'UNAVAILABLE' });
   try {
-    const launch = resolveLaunchCommand(name, ['--version']);
+    const launch = resolve(name, ['--version']);
     const result = spawn(launch.command, launch.args, {
       cwd: os.tmpdir(),
       encoding: 'utf8',
