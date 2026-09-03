@@ -6,4 +6,6 @@ Mandatory domains: source/supply-chain, authority and approval, agent/runtime bo
 
 P0 = authority/safety boundary bypass. P1 = exploitable blocker or missing proof for a critical boundary. P2 = material hardening weakness. P3 = defense-in-depth. INFO = verified observation.
 
-No P0/P1 may be silently waived. Human Accept is never inferred. Head changes stale prior evidence. Fixes require regression tests whenever feasible. Newly confirmed attack classes must be checked across all five projects where applicable.
+No P0/P1 may be silently waived. Human Accept is never inferred. HEAD changes stale prior evidence. Fixes require regression tests whenever feasible. Newly confirmed attack classes must be checked across all applicable BAR capabilities and adapters.
+
+Public-repository evidence must not contain secrets, private project context, customer/business data, personal machine paths, or unrelated cross-repository operational details.
