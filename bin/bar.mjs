@@ -49,12 +49,12 @@ function workerSpec(role, adapter) {
   return {adapter,image,command,args:options(`--${role}-arg`),...(option(`--${role}-memory`)?{memory:option(`--${role}-memory`)}:{}),...(option(`--${role}-cpus`)?{cpus:option(`--${role}-cpus`)}:{})};
 }
 
-function generateTask() {
-  const repoArg = option('--repo'); const intent = option('--intent');
+function generateTask({ intentFlag = '--intent', defaultOut = 'bounded-task.json', defaultBuilder = 'demo', defaultReviewer = 'demo', label = 'TASK_WRITTEN' } = {}) {
+  const repoArg = option('--repo'); const intent = option(intentFlag);
   if (!repoArg || !intent) throw new Error('USAGE:bar task --repo <git-repo> --intent <text> [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test] [--out task.json]');
   const repo = path.resolve(repoArg); const top = git(repo, ['rev-parse','--show-toplevel']);
   if (git(top, ['status','--porcelain=v1','--untracked-files=all'])) throw new Error('SOURCE_REPO_DIRTY:commit or stash changes before creating a bounded task');
-  const requestedBuilder = option('--builder', 'demo'); const requestedReviewer = option('--reviewer', 'demo');
+  const requestedBuilder = option('--builder', defaultBuilder); const requestedReviewer = option('--reviewer', defaultReviewer);
   const agents = doctorReport().agents;
   agents.container.configured_for_builder = Boolean(option('--builder-image') && option('--builder-command'));
   agents.container.configured_for_reviewer = Boolean(option('--reviewer-image') && option('--reviewer-command'));
@@ -86,10 +86,28 @@ function generateTask() {
     budget: { model_calls: 4, wall_clock_seconds: Number(option('--seconds', '900')), retries: 1 },
     ...(option('--verify') ? { verification: { commands: [{ command: option('--verify'), args: options('--verify-arg'), timeout_seconds: Number(option('--verify-timeout', '120')) }] } } : {})
   };
-  const out = path.resolve(option('--out', 'bounded-task.json'));
+  const out = path.resolve(option('--out', defaultOut));
   fs.writeFileSync(out, JSON.stringify(task, null, 2) + '\n', 'utf8');
-  console.log(`TASK_WRITTEN ${out}`);
+  console.log(`${label} ${out}`);
+  return { out, task };
 }
+function workRequest() {
+  if (!option('--repo') || !option('--goal')) throw new Error('USAGE:bar work --repo <git-repo> --goal <text> --allow <path> [--allow <path>] [--builder auto|...] [--reviewer auto|...] --verify <cmd> [--verify-arg <arg>] [--dry-run]');
+  if (!option('--verify')) throw new Error('WORK_VERIFICATION_REQUIRED:bar work requires an explicit controller-observed verification command');
+  if (fs.existsSync(STATE_FILE) && !has('--dry-run')) throw new Error('WORK_RUNTIME_NOT_EMPTY:inspect `bar status` and reset deliberately before starting another work request');
+  const { out, task } = generateTask({ intentFlag: '--goal', defaultOut: 'bounded-work-request.json', defaultBuilder: 'auto', defaultReviewer: 'auto', label: 'WORK_REQUEST_WRITTEN' });
+  console.log('WORK_REQUEST_RESOLVED');
+  console.log(`Goal: ${task.intent}`);
+  console.log(`Source: ${task.source.ref}`);
+  console.log(`Scope: ${task.allowed_paths.join(', ')}`);
+  console.log(`Builder / Reviewer: ${task.workers.builder.adapter} / ${task.workers.reviewer.adapter}`);
+  console.log(`Verification: ${task.verification?.commands?.map(item => [item.command, ...(item.args || [])].join(' ')).join(' | ') || 'none'}`);
+  if (has('--dry-run')) { console.log('WORK_REQUEST_DRY_RUN no controller state created'); return; }
+  controller(['init', out]);
+  controller(['run']);
+  showStatus(false);
+}
+
 function nextStepFor(state) {
   if (state === 'NOT_INITIALIZED') return 'Create a task with `bar task ...`, or run `bar quickstart`.';
   if (state === 'HUMAN_GATE') return 'Review the evidence. Sign and approve only if this exact candidate is acceptable.';
@@ -141,18 +159,20 @@ function friendlyError(message) {
     ['ADAPTER_UNKNOWN','Unknown adapter. Run `bar agents` and see docs/19-ADAPTER-CONFORMANCE.md.'],
     ['AUTO_ADAPTER_UNAVAILABLE','No installed adapter can satisfy that role. Run `bar agents`, install one, then recreate the task.'],
     ['CONTROLLER_EXIT','The controller failed closed. Run `bar status` and `bar recover`; inspect the attached controller error before resetting.'],
-    ['QUICKSTART_PREREQUISITE_FAILED','A required prerequisite is missing. Run `bar doctor` for the exact check and install it before retrying.']
+    ['QUICKSTART_PREREQUISITE_FAILED','A required prerequisite is missing. Run `bar doctor` for the exact check and install it before retrying.'],
+    ['WORK_RUNTIME_NOT_EMPTY','An existing controller task is still active. Inspect `bar status`; use `bar reset` only when you deliberately want to discard it.']
   ];
   const hit=guides.find(([prefix])=>message.startsWith(prefix));
   return hit ? `${message}\nNEXT: ${hit[1]}` : message;
 }
 function help() {
-  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action>\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
+  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar work --repo <path> --goal <text> --allow <path> [--builder auto] [--reviewer auto] [--verify npm --verify-arg test] [--dry-run]\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action>\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
 }
 
 try {
   if (!command || command === 'help' || command === '--help' || command === '-h') help();
   else if (command === 'quickstart') quickstart();
+  else if (command === 'work') workRequest();
   else if (command === 'doctor') { const report = doctorReport(); console.log(has('--json') ? JSON.stringify(report, null, 2) : formatDoctor(report)); if (report.status === 'FAIL') process.exitCode = 1; }
   else if (command === 'agents') { const agents = doctorReport().agents; console.log(has('--json') ? JSON.stringify(agents, null, 2) : Object.entries(agents).map(([n,a]) => `${a.installed ? 'OK' : '--'} ${n.padEnd(12)} ${a.roles.join('/')} ${a.executable || 'not found'} | ${a.boundary || 'controller-enforced'}`).join('\n')); }
   else if (command === 'task') generateTask();

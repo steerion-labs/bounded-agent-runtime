@@ -11,6 +11,19 @@ bar agents
 
 `doctor` reports Node/Git, runtime mode, installed adapters and whether protected worker-egress enforcement has been declared. Missing optional agents are warnings, not authority fallbacks.
 
+## Start with a bounded work request
+
+For normal use, `bar work` composes task creation and the existing controller run into one command while preserving the same authority model:
+
+```powershell
+bar work --repo C:\repo --goal "Fix parser" `
+  --allow src --allow test `
+  --builder auto --reviewer auto `
+  --verify npm --verify-arg test
+```
+
+`bar work` requires explicit write scope and explicit controller-observed verification. It retains the resolved task artifact, binds concrete adapters before execution, and stops at the existing Human Gate. `--dry-run` resolves and prints the task contract without creating controller state. It never merges, deploys or releases.
+
 ## Create a bounded task
 
 The source repository must be clean. Write scope is explicit:
