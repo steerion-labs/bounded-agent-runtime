@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { RUNTIME_ROOT, STATE_FILE, SECRETS_DIR } from './core.mjs';
@@ -24,6 +25,45 @@ function probeAgentAuth(name, executable) {
   if (name === 'opencode') return result.status === 0 && !/\b0 credentials\b/i.test(output);
   return null;
 }
+
+export function diagnosticProbeEnv(source = process.env) {
+  const env = {};
+  for (const key of ['PATH','Path','PATHEXT','SystemRoot','SYSTEMROOT','WINDIR','COMSPEC','TEMP','TMP']) {
+    if (source[key] !== undefined) env[key] = source[key];
+  }
+  env.NO_COLOR = '1';
+  env.CI = '1';
+  return env;
+}
+
+export function parseVersionOutput(stdout = '', stderr = '') {
+  const lines = `${stdout}\n${stderr}`.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+  const line = lines.find(value => value.length <= 160 && /\d+\.\d+/.test(value));
+  if (!line) return null;
+  return line.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 160);
+}
+
+export function probeAgentVersion(name, executable, { spawn = spawnSync, resolve = resolveLaunchCommand } = {}) {
+  if (!executable) return Object.freeze({ version: null, version_probe: 'NOT_INSTALLED' });
+  if (name === 'demo') return Object.freeze({ version: `node ${process.versions.node}`, version_probe: 'PASS' });
+  if (name === 'generic') return Object.freeze({ version: null, version_probe: 'UNAVAILABLE' });
+  try {
+    const launch = resolve(name, ['--version']);
+    const result = spawn(launch.command, launch.args, {
+      cwd: os.tmpdir(),
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 5000,
+      env: diagnosticProbeEnv()
+    });
+    if (result?.error || result?.status !== 0) return Object.freeze({ version: null, version_probe: 'FAILED' });
+    const version = parseVersionOutput(result.stdout, result.stderr);
+    return Object.freeze({ version, version_probe: version ? 'PASS' : 'FAILED' });
+  } catch {
+    return Object.freeze({ version: null, version_probe: 'FAILED' });
+  }
+}
+
 function row(id, ok, detail, severity = 'required') {
   return { id, ok: Boolean(ok), severity, detail };
 }
@@ -42,8 +82,20 @@ export function doctorReport() {
   for (const [name, def] of Object.entries(adapterDefinitions())) {
     const executable = name === 'generic' ? process.env.BOUNDED_AGENT_GENERIC_EXECUTABLE || null : (name === 'demo' ? process.execPath : findExecutable(def.executable));
     const authenticated = probeAgentAuth(name, executable);
-    agents[name] = { installed: Boolean(executable), executable, roles: def.roles, boundary: def.boundary || 'controller-enforced', ...(authenticated === null ? {} : { authenticated }) };
-    if (name === 'codex') { agents[name].safe_for_builder = false; agents[name].builder_requires_user_config_opt_in = true; agents[name].user_config_risks = codexPolicy.reasons; }
+    const versionState = probeAgentVersion(name, executable);
+    agents[name] = {
+      installed: Boolean(executable),
+      executable,
+      roles: def.roles,
+      boundary: def.boundary || 'controller-enforced',
+      ...versionState,
+      ...(authenticated === null ? {} : { authenticated })
+    };
+    if (name === 'codex') {
+      agents[name].safe_for_builder = false;
+      agents[name].builder_requires_user_config_opt_in = true;
+      agents[name].user_config_risks = codexPolicy.reasons;
+    }
   }
   checks.push(row('runtime_state', fs.existsSync(STATE_FILE), fs.existsSync(STATE_FILE) ? STATE_FILE : 'not initialized', 'advisory'));
   checks.push(row('secret_zone', fs.existsSync(SECRETS_DIR), fs.existsSync(SECRETS_DIR) ? SECRETS_DIR : 'created on first runtime use', 'advisory'));
@@ -64,7 +116,10 @@ export function formatDoctor(report) {
   const lines = [`Bounded Agent Runtime doctor: ${report.status}`, ''];
   for (const check of report.checks) lines.push(`${check.ok ? 'OK ' : '!! '} ${check.id.padEnd(16)} ${check.detail}`);
   lines.push('', 'Agent adapters:');
-  for (const [name, agent] of Object.entries(report.agents)) lines.push(`${agent.installed ? 'OK ' : '-- '} ${name.padEnd(12)} ${agent.roles.join('/')} ${agent.executable || 'not found'} | ${agent.boundary}`);
+  for (const [name, agent] of Object.entries(report.agents)) {
+    const version = agent.version || `version:${String(agent.version_probe || 'UNKNOWN').toLowerCase()}`;
+    lines.push(`${agent.installed ? 'OK ' : '-- '} ${name.padEnd(12)} ${agent.roles.join('/')} ${agent.executable || 'not found'} | ${version} | ${agent.boundary}`);
+  }
   if (!report.protected_mode) lines.push('', 'NOTE: Demo mode is convenient, not an OS isolation boundary. Use protected mode + worker identities before relying on host isolation.');
   return lines.join('\n');
 }
