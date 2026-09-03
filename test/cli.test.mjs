@@ -43,7 +43,7 @@ test('dashboard serves sanitized status on loopback',async()=>{
     const address=server.address(); assert.ok(address&&typeof address==='object');
     const response=await getLocal(address.port,'/api/status'); assert.equal(response.status,200);
     const body=JSON.parse(response.body); assert.equal(typeof body.state,'string'); assert.equal('signature' in body,false);
-    const page=await getLocal(address.port,'/'); assert.equal(page.status,200); assert.match(page.body,/Read-only local control view/);
+    const page=await getLocal(address.port,'/'); assert.equal(page.status,200); assert.match(page.body,/Read-only local evidence view/);
   } finally { server.closeAllConnections?.(); await new Promise(resolve=>server.close(resolve)); }
 });
 
