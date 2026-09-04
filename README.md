@@ -90,7 +90,7 @@ Use the agent you already like. BAR focuses on the part agent frameworks should 
 
 ## What ships today
 
-- CLI for `doctor`, `quickstart`, `task`, `run`, `status`, recovery and Human Gate flows
+- CLI for `doctor`, `quickstart`, `work`, `task`, `run`, `status`, recovery and Human Gate flows
 - first-party adapters for **Codex**, **Claude Code** and **OpenCode**
 - optional Docker Builder/Reviewer with `network none`
 - exact candidate commit + tree binding
@@ -113,6 +113,24 @@ Use the agent you already like. BAR focuses on the part agent frameworks should 
 BAR deliberately avoids dangerous permission-bypass flags in its primary adapter defaults.
 
 ## Run a real bounded task
+
+For the normal user path, start with one bounded work request:
+
+```powershell
+bar work `
+  --repo C:\path\to\your-repo `
+  --goal "Fix the failing parser test" `
+  --allow src `
+  --allow test `
+  --builder auto `
+  --reviewer auto `
+  --verify npm `
+  --verify-arg test
+```
+
+`bar work` resolves the concrete task contract, retains it as `bounded-work-request.json`, runs the existing controller path, and stops at the same Human Gate. Use `--dry-run` to inspect the resolved scope, agents and verification without creating controller state. It never implies full-repo write access and it does not merge, deploy or release.
+
+For lower-level control, the original two-step interface remains available:
 
 ```powershell
 bar task `

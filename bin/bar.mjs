@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { STATE_FILE, readJson } from '../runtime/core.mjs';
+import { RUNTIME_ROOT, STATE_FILE, readJson, validateTask } from '../runtime/core.mjs';
 import { doctorReport, formatDoctor } from '../runtime/doctor.mjs';
 import { adapterDefinitions, assertAdapterName, selectAvailableAdapter } from '../runtime/adapters/registry.mjs';
 
@@ -21,7 +21,7 @@ function option(name, fallback = null) {
 }
 function has(name) { return argv.includes(name); }
 function canonical(value) { if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']'; if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key)+':'+canonical(value[key])).join(',') + '}'; return JSON.stringify(value); }
-function options(name) { const values=[]; for(let i=0;i<argv.length;i+=1) if(argv[i]===name){ const value=argv[i+1]; if(value===undefined||value.startsWith('--')) throw new Error(`OPTION_VALUE_REQUIRED:${name}`); values.push(value); } return values; }
+function options(name) { const values=[]; for(let i=0;i<argv.length;i+=1){ const token=argv[i]; if(token===name){ const value=argv[i+1]; if(value===undefined||value.startsWith('--')) throw new Error(`OPTION_VALUE_REQUIRED:${name}`); values.push(value); } else if(token.startsWith(`${name}=`)){ const value=token.slice(name.length+1); if(!value) throw new Error(`OPTION_VALUE_REQUIRED:${name}`); values.push(value); } } return values; }
 function controller(args, { env = process.env, capture = false } = {}) {
   const result = spawnSync(process.execPath, [path.join(root, 'runtime', 'controller.mjs'), ...args], { stdio: capture ? ['ignore','pipe','pipe'] : 'inherit', encoding: capture ? 'utf8' : undefined, env, windowsHide: true });
   if (result.status !== 0) throw new Error(`CONTROLLER_EXIT:${result.status}:${String(result.stderr || '').trim()}`);
@@ -49,12 +49,12 @@ function workerSpec(role, adapter) {
   return {adapter,image,command,args:options(`--${role}-arg`),...(option(`--${role}-memory`)?{memory:option(`--${role}-memory`)}:{}),...(option(`--${role}-cpus`)?{cpus:option(`--${role}-cpus`)}:{})};
 }
 
-function generateTask() {
-  const repoArg = option('--repo'); const intent = option('--intent');
+function generateTask({ intentFlag = '--intent', defaultOut = 'bounded-task.json', defaultBuilder = 'demo', defaultReviewer = 'demo', label = 'TASK_WRITTEN', allowDemoScopeExpansion = true, verificationSemantics = null, exclusiveOut = false, ensureDefaultOutDir = false, rejectOutInsideSource = false } = {}) {
+  const repoArg = option('--repo'); const intent = option(intentFlag);
   if (!repoArg || !intent) throw new Error('USAGE:bar task --repo <git-repo> --intent <text> [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test] [--out task.json]');
   const repo = path.resolve(repoArg); const top = git(repo, ['rev-parse','--show-toplevel']);
   if (git(top, ['status','--porcelain=v1','--untracked-files=all'])) throw new Error('SOURCE_REPO_DIRTY:commit or stash changes before creating a bounded task');
-  const requestedBuilder = option('--builder', 'demo'); const requestedReviewer = option('--reviewer', 'demo');
+  const requestedBuilder = option('--builder', defaultBuilder); const requestedReviewer = option('--reviewer', defaultReviewer);
   const agents = doctorReport().agents;
   agents.container.configured_for_builder = Boolean(option('--builder-image') && option('--builder-command'));
   agents.container.configured_for_reviewer = Boolean(option('--reviewer-image') && option('--reviewer-command'));
@@ -70,7 +70,10 @@ function generateTask() {
   let entries = options('--allow').map(value=>value.replaceAll('\\','/').replace(/^\.\//,'').replace(/\/$/,''));
   if (has('--allow-all')) entries=[...repoEntries];
   if (!entries.length) throw new Error('ALLOWED_PATH_REQUIRED:use --allow <path> (repeatable) or explicit --allow-all');
-  if (builder === 'demo' && !entries.includes('demo-output')) entries.push('demo-output');
+  if (builder === 'demo' && !entries.includes('demo-output')) {
+    if (!allowDemoScopeExpansion) throw new Error('WORK_DEMO_SCOPE_REQUIRED:add `--allow demo-output` explicitly when using the synthetic demo builder');
+    entries.push('demo-output');
+  }
   const task = {
     schema_version: 1,
     task_id: option('--id', `bar-${Date.now()}`),
@@ -84,12 +87,53 @@ function generateTask() {
     protected_actions: ['merge'],
     allowed_paths: entries,
     budget: { model_calls: 4, wall_clock_seconds: Number(option('--seconds', '900')), retries: 1 },
-    ...(option('--verify') ? { verification: { commands: [{ command: option('--verify'), args: options('--verify-arg'), timeout_seconds: Number(option('--verify-timeout', '120')) }] } } : {})
+    ...(option('--verify') ? { verification: { ...(verificationSemantics ? { semantics: verificationSemantics } : {}), commands: [{ command: option('--verify'), args: options('--verify-arg'), timeout_seconds: Number(option('--verify-timeout', '120')) }] } } : {})
   };
-  const out = path.resolve(option('--out', 'bounded-task.json'));
-  fs.writeFileSync(out, JSON.stringify(task, null, 2) + '\n', 'utf8');
-  console.log(`TASK_WRITTEN ${out}`);
+  validateTask(task);
+  const fallbackOut = typeof defaultOut === 'function' ? defaultOut(task) : defaultOut;
+  const requestedOut = option('--out');
+  const out = path.resolve(requestedOut || fallbackOut);
+  if (!requestedOut && ensureDefaultOutDir) fs.mkdirSync(path.dirname(out), { recursive: true });
+  if (rejectOutInsideSource) {
+    const sourceReal = fs.realpathSync.native(top);
+    const parentReal = fs.realpathSync.native(path.dirname(out));
+    const outReal = path.join(parentReal, path.basename(out));
+    const relativeOut = path.relative(sourceReal, outReal);
+    if (relativeOut === '' || (!relativeOut.startsWith('..' + path.sep) && relativeOut !== '..' && !path.isAbsolute(relativeOut))) throw new Error('WORK_AUDIT_OUTSIDE_SOURCE_REQUIRED:work request audit artifacts must be stored outside the source repository');
+  }
+  fs.writeFileSync(out, JSON.stringify(task, null, 2) + '\n', { encoding: 'utf8', ...(exclusiveOut ? { flag: 'wx' } : {}) });
+  console.log(`${label} ${out}`);
+  return { out, task };
 }
+function assertWorkVerificationProfile(command, args) {
+  const exe = String(command || '').toLowerCase().replace(/\\/g,'/').split('/').at(-1)?.replace(/\.exe$/,'') || '';
+  const a = (args || []).map(value => String(value).toLowerCase());
+  const npmLike = ['npm','pnpm','yarn'].includes(exe) && (a[0] === 'test' || (a[0] === 'run' && ['test','lint','build','check','verify','typecheck'].includes(a[1])));
+  const nodeTest = exe === 'node' && a.includes('--test');
+  const pytest = exe === 'pytest' || (['python','python3','py'].includes(exe) && a[0] === '-m' && a[1] === 'pytest');
+  const native = (exe === 'go' && a[0] === 'test') || (exe === 'cargo' && ['test','check','clippy'].includes(a[0])) || (exe === 'dotnet' && ['test','build'].includes(a[0])) || (['mvn','mvnw'].includes(exe) && a.includes('test')) || (['gradle','gradlew','make'].includes(exe) && a.some(value => ['test','check','verify','build'].includes(value)));
+  if (!(npmLike || nodeTest || pytest || native)) throw new Error('WORK_VERIFICATION_PROFILE_REQUIRED:use a recognized test/check/build command shape; BAR proves execution/exit status, not semantic adequacy; lower-level `bar task` remains available for custom verification');
+}
+
+function workRequest() {
+  if (!option('--repo') || !option('--goal')) throw new Error('USAGE:bar work --repo <git-repo> --goal <text> --allow <path> [--allow <path>] [--builder auto|...] [--reviewer auto|...] --verify <cmd> [--verify-arg <arg>] [--dry-run]');
+  if (!option('--verify')) throw new Error('WORK_VERIFICATION_REQUIRED:bar work requires an explicit controller-observed verification command');
+  assertWorkVerificationProfile(option('--verify'), options('--verify-arg'));
+  if (fs.existsSync(STATE_FILE) && !has('--dry-run')) throw new Error('WORK_RUNTIME_NOT_EMPTY:inspect `bar status` and reset deliberately before starting another work request');
+  const { out, task } = generateTask({ intentFlag: '--goal', defaultOut: task => path.join(RUNTIME_ROOT, 'work-requests', `${task.task_id}.json`), defaultBuilder: 'auto', defaultReviewer: 'auto', label: 'WORK_REQUEST_WRITTEN', allowDemoScopeExpansion: false, verificationSemantics: 'OPERATOR_DECLARED_COMMAND_EXECUTION_ONLY', exclusiveOut: true, ensureDefaultOutDir: true, rejectOutInsideSource: true });
+  console.log('WORK_REQUEST_RESOLVED');
+  console.log(`Goal: ${task.intent}`);
+  console.log(`Source: ${task.source.ref}`);
+  console.log(`Scope: ${task.allowed_paths.join(', ')}`);
+  console.log(`Builder / Reviewer: ${task.workers.builder.adapter} / ${task.workers.reviewer.adapter}`);
+  console.log(`Verification: ${task.verification?.commands?.map(item => [item.command, ...(item.args || [])].join(' ')).join(' | ') || 'none'}`);
+  console.log('Verification semantics: operator-declared command; BAR proves exact execution/exit status, not test semantic adequacy.');
+  if (has('--dry-run')) { console.log('WORK_REQUEST_DRY_RUN no controller state created'); return; }
+  controller(['init', out]);
+  controller(['run']);
+  showStatus(false);
+}
+
 function nextStepFor(state) {
   if (state === 'NOT_INITIALIZED') return 'Create a task with `bar task ...`, or run `bar quickstart`.';
   if (state === 'HUMAN_GATE') return 'Review the evidence. Sign and approve only if this exact candidate is acceptable.';
@@ -141,18 +185,22 @@ function friendlyError(message) {
     ['ADAPTER_UNKNOWN','Unknown adapter. Run `bar agents` and see docs/19-ADAPTER-CONFORMANCE.md.'],
     ['AUTO_ADAPTER_UNAVAILABLE','No installed adapter can satisfy that role. Run `bar agents`, install one, then recreate the task.'],
     ['CONTROLLER_EXIT','The controller failed closed. Run `bar status` and `bar recover`; inspect the attached controller error before resetting.'],
-    ['QUICKSTART_PREREQUISITE_FAILED','A required prerequisite is missing. Run `bar doctor` for the exact check and install it before retrying.']
+    ['QUICKSTART_PREREQUISITE_FAILED','A required prerequisite is missing. Run `bar doctor` for the exact check and install it before retrying.'],
+    ['WORK_RUNTIME_NOT_EMPTY','An existing controller task is still active. Inspect `bar status`; use `bar reset` only when you deliberately want to discard it.'],
+    ['WORK_DEMO_SCOPE_REQUIRED','The synthetic demo builder writes `demo-output`; grant that path explicitly or choose another builder.'],
+    ['WORK_VERIFICATION_PROFILE_REQUIRED','Use a recognized test/check/build command shape. BAR records exact execution evidence but does not claim semantic adequacy.']
   ];
   const hit=guides.find(([prefix])=>message.startsWith(prefix));
   return hit ? `${message}\nNEXT: ${hit[1]}` : message;
 }
 function help() {
-  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action>\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
+  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar work --repo <path> --goal <text> --allow <path> [--builder auto] [--reviewer auto] [--verify npm --verify-arg test] [--dry-run]\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action>\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
 }
 
 try {
   if (!command || command === 'help' || command === '--help' || command === '-h') help();
   else if (command === 'quickstart') quickstart();
+  else if (command === 'work') workRequest();
   else if (command === 'doctor') { const report = doctorReport(); console.log(has('--json') ? JSON.stringify(report, null, 2) : formatDoctor(report)); if (report.status === 'FAIL') process.exitCode = 1; }
   else if (command === 'agents') { const agents = doctorReport().agents; console.log(has('--json') ? JSON.stringify(agents, null, 2) : Object.entries(agents).map(([n,a]) => `${a.installed ? 'OK' : '--'} ${n.padEnd(12)} ${a.roles.join('/')} ${a.executable || 'not found'} | ${a.boundary || 'controller-enforced'}`).join('\n')); }
   else if (command === 'task') generateTask();
