@@ -141,3 +141,17 @@ test('work never overwrites an existing audit artifact', () => {
   assert.notEqual(result.status, 0);
   assert.equal(fs.readFileSync(out, 'utf8'), 'sentinel\n');
 });
+
+
+test('work rejects audit output inside the source repository', () => {
+  const src = sourceRepo();
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'bar-work-outside-source-'));
+  const root = path.join(cwd, 'runtime');
+  const out = path.join(src, 'bounded-work-request.json');
+  const env = { ...process.env, BOUNDED_AGENT_RUNTIME_ROOT: root };
+  const result = run(['work','--repo',src,'--goal','Fix x','--allow','src','--allow','demo-output','--builder','demo','--reviewer','demo','--verify','node','--verify-arg=--test','--verify-arg','verify.test.mjs','--dry-run','--out',out], cwd, env);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /WORK_AUDIT_OUTSIDE_SOURCE_REQUIRED/);
+  assert.equal(fs.existsSync(out), false);
+  assert.equal(execFileSync('git', ['status','--porcelain=v1','--untracked-files=all'], { cwd: src, encoding: 'utf8' }).trim(), '');
+});

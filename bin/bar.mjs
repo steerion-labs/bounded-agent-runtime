@@ -49,7 +49,7 @@ function workerSpec(role, adapter) {
   return {adapter,image,command,args:options(`--${role}-arg`),...(option(`--${role}-memory`)?{memory:option(`--${role}-memory`)}:{}),...(option(`--${role}-cpus`)?{cpus:option(`--${role}-cpus`)}:{})};
 }
 
-function generateTask({ intentFlag = '--intent', defaultOut = 'bounded-task.json', defaultBuilder = 'demo', defaultReviewer = 'demo', label = 'TASK_WRITTEN', allowDemoScopeExpansion = true, verificationSemantics = null, exclusiveOut = false, ensureDefaultOutDir = false } = {}) {
+function generateTask({ intentFlag = '--intent', defaultOut = 'bounded-task.json', defaultBuilder = 'demo', defaultReviewer = 'demo', label = 'TASK_WRITTEN', allowDemoScopeExpansion = true, verificationSemantics = null, exclusiveOut = false, ensureDefaultOutDir = false, rejectOutInsideSource = false } = {}) {
   const repoArg = option('--repo'); const intent = option(intentFlag);
   if (!repoArg || !intent) throw new Error('USAGE:bar task --repo <git-repo> --intent <text> [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test] [--out task.json]');
   const repo = path.resolve(repoArg); const top = git(repo, ['rev-parse','--show-toplevel']);
@@ -93,6 +93,13 @@ function generateTask({ intentFlag = '--intent', defaultOut = 'bounded-task.json
   const requestedOut = option('--out');
   const out = path.resolve(requestedOut || fallbackOut);
   if (!requestedOut && ensureDefaultOutDir) fs.mkdirSync(path.dirname(out), { recursive: true });
+  if (rejectOutInsideSource) {
+    const sourceReal = fs.realpathSync.native(top);
+    const parentReal = fs.realpathSync.native(path.dirname(out));
+    const outReal = path.join(parentReal, path.basename(out));
+    const relativeOut = path.relative(sourceReal, outReal);
+    if (relativeOut === '' || (!relativeOut.startsWith('..' + path.sep) && relativeOut !== '..' && !path.isAbsolute(relativeOut))) throw new Error('WORK_AUDIT_OUTSIDE_SOURCE_REQUIRED:work request audit artifacts must be stored outside the source repository');
+  }
   fs.writeFileSync(out, JSON.stringify(task, null, 2) + '\n', { encoding: 'utf8', ...(exclusiveOut ? { flag: 'wx' } : {}) });
   console.log(`${label} ${out}`);
   return { out, task };
@@ -112,7 +119,7 @@ function workRequest() {
   if (!option('--verify')) throw new Error('WORK_VERIFICATION_REQUIRED:bar work requires an explicit controller-observed verification command');
   assertWorkVerificationProfile(option('--verify'), options('--verify-arg'));
   if (fs.existsSync(STATE_FILE) && !has('--dry-run')) throw new Error('WORK_RUNTIME_NOT_EMPTY:inspect `bar status` and reset deliberately before starting another work request');
-  const { out, task } = generateTask({ intentFlag: '--goal', defaultOut: task => path.join(RUNTIME_ROOT, 'work-requests', `${task.task_id}.json`), defaultBuilder: 'auto', defaultReviewer: 'auto', label: 'WORK_REQUEST_WRITTEN', allowDemoScopeExpansion: false, verificationSemantics: 'OPERATOR_DECLARED_COMMAND_EXECUTION_ONLY', exclusiveOut: true, ensureDefaultOutDir: true });
+  const { out, task } = generateTask({ intentFlag: '--goal', defaultOut: task => path.join(RUNTIME_ROOT, 'work-requests', `${task.task_id}.json`), defaultBuilder: 'auto', defaultReviewer: 'auto', label: 'WORK_REQUEST_WRITTEN', allowDemoScopeExpansion: false, verificationSemantics: 'OPERATOR_DECLARED_COMMAND_EXECUTION_ONLY', exclusiveOut: true, ensureDefaultOutDir: true, rejectOutInsideSource: true });
   console.log('WORK_REQUEST_RESOLVED');
   console.log(`Goal: ${task.intent}`);
   console.log(`Source: ${task.source.ref}`);
