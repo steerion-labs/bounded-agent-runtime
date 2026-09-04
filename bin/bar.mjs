@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { STATE_FILE, readJson } from '../runtime/core.mjs';
+import { RUNTIME_ROOT, STATE_FILE, readJson } from '../runtime/core.mjs';
 import { doctorReport, formatDoctor } from '../runtime/doctor.mjs';
 import { adapterDefinitions, assertAdapterName, selectAvailableAdapter } from '../runtime/adapters/registry.mjs';
 
@@ -49,7 +49,7 @@ function workerSpec(role, adapter) {
   return {adapter,image,command,args:options(`--${role}-arg`),...(option(`--${role}-memory`)?{memory:option(`--${role}-memory`)}:{}),...(option(`--${role}-cpus`)?{cpus:option(`--${role}-cpus`)}:{})};
 }
 
-function generateTask({ intentFlag = '--intent', defaultOut = 'bounded-task.json', defaultBuilder = 'demo', defaultReviewer = 'demo', label = 'TASK_WRITTEN', allowDemoScopeExpansion = true, verificationSemantics = null } = {}) {
+function generateTask({ intentFlag = '--intent', defaultOut = 'bounded-task.json', defaultBuilder = 'demo', defaultReviewer = 'demo', label = 'TASK_WRITTEN', allowDemoScopeExpansion = true, verificationSemantics = null, exclusiveOut = false, ensureDefaultOutDir = false } = {}) {
   const repoArg = option('--repo'); const intent = option(intentFlag);
   if (!repoArg || !intent) throw new Error('USAGE:bar task --repo <git-repo> --intent <text> [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test] [--out task.json]');
   const repo = path.resolve(repoArg); const top = git(repo, ['rev-parse','--show-toplevel']);
@@ -89,8 +89,11 @@ function generateTask({ intentFlag = '--intent', defaultOut = 'bounded-task.json
     budget: { model_calls: 4, wall_clock_seconds: Number(option('--seconds', '900')), retries: 1 },
     ...(option('--verify') ? { verification: { ...(verificationSemantics ? { semantics: verificationSemantics } : {}), commands: [{ command: option('--verify'), args: options('--verify-arg'), timeout_seconds: Number(option('--verify-timeout', '120')) }] } } : {})
   };
-  const out = path.resolve(option('--out', defaultOut));
-  fs.writeFileSync(out, JSON.stringify(task, null, 2) + '\n', 'utf8');
+  const fallbackOut = typeof defaultOut === 'function' ? defaultOut(task) : defaultOut;
+  const requestedOut = option('--out');
+  const out = path.resolve(requestedOut || fallbackOut);
+  if (!requestedOut && ensureDefaultOutDir) fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, JSON.stringify(task, null, 2) + '\n', { encoding: 'utf8', ...(exclusiveOut ? { flag: 'wx' } : {}) });
   console.log(`${label} ${out}`);
   return { out, task };
 }
@@ -109,7 +112,7 @@ function workRequest() {
   if (!option('--verify')) throw new Error('WORK_VERIFICATION_REQUIRED:bar work requires an explicit controller-observed verification command');
   assertWorkVerificationProfile(option('--verify'), options('--verify-arg'));
   if (fs.existsSync(STATE_FILE) && !has('--dry-run')) throw new Error('WORK_RUNTIME_NOT_EMPTY:inspect `bar status` and reset deliberately before starting another work request');
-  const { out, task } = generateTask({ intentFlag: '--goal', defaultOut: 'bounded-work-request.json', defaultBuilder: 'auto', defaultReviewer: 'auto', label: 'WORK_REQUEST_WRITTEN', allowDemoScopeExpansion: false, verificationSemantics: 'OPERATOR_DECLARED_COMMAND_EXECUTION_ONLY' });
+  const { out, task } = generateTask({ intentFlag: '--goal', defaultOut: task => path.join(RUNTIME_ROOT, 'work-requests', `${task.task_id}.json`), defaultBuilder: 'auto', defaultReviewer: 'auto', label: 'WORK_REQUEST_WRITTEN', allowDemoScopeExpansion: false, verificationSemantics: 'OPERATOR_DECLARED_COMMAND_EXECUTION_ONLY', exclusiveOut: true, ensureDefaultOutDir: true });
   console.log('WORK_REQUEST_RESOLVED');
   console.log(`Goal: ${task.intent}`);
   console.log(`Source: ${task.source.ref}`);

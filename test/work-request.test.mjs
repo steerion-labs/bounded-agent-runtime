@@ -115,3 +115,29 @@ test('work rejects unsupported verification command shapes', () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /WORK_VERIFICATION_PROFILE_REQUIRED/);
 });
+
+
+test('work default audit artifact stays outside the source repository', () => {
+  const src = sourceRepo();
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'bar-work-default-out-'));
+  const root = path.join(cwd, 'runtime');
+  const env = { ...process.env, BOUNDED_AGENT_RUNTIME_ROOT: root };
+  const result = run(['work','--repo',src,'--goal','Fix x','--allow','src','--allow','demo-output','--builder','demo','--reviewer','demo','--verify','node','--verify-arg=--test','--verify-arg','verify.test.mjs','--dry-run'], cwd, env);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(execFileSync('git', ['status','--porcelain=v1','--untracked-files=all'], { cwd: src, encoding: 'utf8' }).trim(), '');
+  const auditDir = path.join(root, 'work-requests');
+  assert.equal(fs.existsSync(auditDir), true);
+  assert.equal(fs.readdirSync(auditDir).length, 1);
+});
+
+test('work never overwrites an existing audit artifact', () => {
+  const src = sourceRepo();
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'bar-work-no-overwrite-'));
+  const root = path.join(cwd, 'runtime');
+  const out = path.join(cwd, 'existing.json');
+  fs.writeFileSync(out, 'sentinel\n');
+  const env = { ...process.env, BOUNDED_AGENT_RUNTIME_ROOT: root };
+  const result = run(['work','--repo',src,'--goal','Fix x','--allow','src','--allow','demo-output','--builder','demo','--reviewer','demo','--verify','node','--verify-arg=--test','--verify-arg','verify.test.mjs','--dry-run','--out',out], cwd, env);
+  assert.notEqual(result.status, 0);
+  assert.equal(fs.readFileSync(out, 'utf8'), 'sentinel\n');
+});
