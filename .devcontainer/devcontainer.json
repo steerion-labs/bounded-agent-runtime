@@ -1,0 +1,15 @@
+{
+  "name": "Bounded Agent Runtime Cloud Workspace",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "postCreateCommand": "npm ci",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "git.autofetch": true
+      }
+    }
+  }
+}
