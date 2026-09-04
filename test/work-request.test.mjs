@@ -41,6 +41,7 @@ test('work dry-run resolves and retains an auditable bounded task without contro
   assert.deepEqual(task.allowed_paths, ['src', 'demo-output']);
   assert.equal(task.workers.builder.adapter, 'demo');
   assert.equal(task.workers.reviewer.adapter, 'demo');
+  assert.equal(task.verification.semantics, 'OPERATOR_DECLARED_COMMAND_EXECUTION_ONLY');
 });
 
 test('work refuses implicit write scope', () => {
@@ -106,11 +107,11 @@ test('work never silently expands demo builder scope', () => {
   assert.match(result.stderr, /WORK_DEMO_SCOPE_REQUIRED/);
 });
 
-test('work rejects obvious no-op verification commands', () => {
+test('work rejects unsupported verification command shapes', () => {
   const src = sourceRepo();
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'bar-work-noop-'));
   const env = { ...process.env, BOUNDED_AGENT_RUNTIME_ROOT: path.join(cwd, 'runtime') };
   const result = run(['work','--repo',src,'--goal','Fix x','--allow','src','--allow','demo-output','--builder','demo','--reviewer','demo','--verify','node','--verify-arg','-e','--verify-arg','process.exit(0)','--dry-run'], cwd, env);
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /WORK_VERIFICATION_NOT_MEANINGFUL/);
+  assert.match(result.stderr, /WORK_VERIFICATION_PROFILE_REQUIRED/);
 });

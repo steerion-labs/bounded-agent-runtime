@@ -22,7 +22,7 @@ bar work --repo C:\repo --goal "Fix parser" `
   --verify npm --verify-arg test
 ```
 
-`bar work` requires explicit write scope and explicit controller-observed verification. It retains the resolved task artifact, binds concrete adapters before execution, and stops at the existing Human Gate. `--dry-run` resolves and prints the task contract without creating controller state. It never merges, deploys or releases.
+`bar work` requires explicit write scope and explicit controller-observed verification. It retains the resolved task artifact, binds concrete adapters before execution, and stops at the existing Human Gate. `--dry-run` resolves and prints the task contract without creating controller state. It never merges, deploys or releases. Verification evidence proves that the exact operator-declared command ran against the exact candidate and records its exit status/output; BAR does not claim that an arbitrary test command is semantically sufficient for the user goal.
 
 ## Create a bounded task
 
