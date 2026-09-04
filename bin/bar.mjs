@@ -21,7 +21,7 @@ function option(name, fallback = null) {
 }
 function has(name) { return argv.includes(name); }
 function canonical(value) { if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']'; if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key)+':'+canonical(value[key])).join(',') + '}'; return JSON.stringify(value); }
-function options(name) { const values=[]; for(let i=0;i<argv.length;i+=1) if(argv[i]===name){ const value=argv[i+1]; if(value===undefined||value.startsWith('--')) throw new Error(`OPTION_VALUE_REQUIRED:${name}`); values.push(value); } return values; }
+function options(name) { const values=[]; for(let i=0;i<argv.length;i+=1){ const token=argv[i]; if(token===name){ const value=argv[i+1]; if(value===undefined||value.startsWith('--')) throw new Error(`OPTION_VALUE_REQUIRED:${name}`); values.push(value); } else if(token.startsWith(`${name}=`)){ const value=token.slice(name.length+1); if(!value) throw new Error(`OPTION_VALUE_REQUIRED:${name}`); values.push(value); } } return values; }
 function controller(args, { env = process.env, capture = false } = {}) {
   const result = spawnSync(process.execPath, [path.join(root, 'runtime', 'controller.mjs'), ...args], { stdio: capture ? ['ignore','pipe','pipe'] : 'inherit', encoding: capture ? 'utf8' : undefined, env, windowsHide: true });
   if (result.status !== 0) throw new Error(`CONTROLLER_EXIT:${result.status}:${String(result.stderr || '').trim()}`);
@@ -49,7 +49,7 @@ function workerSpec(role, adapter) {
   return {adapter,image,command,args:options(`--${role}-arg`),...(option(`--${role}-memory`)?{memory:option(`--${role}-memory`)}:{}),...(option(`--${role}-cpus`)?{cpus:option(`--${role}-cpus`)}:{})};
 }
 
-function generateTask({ intentFlag = '--intent', defaultOut = 'bounded-task.json', defaultBuilder = 'demo', defaultReviewer = 'demo', label = 'TASK_WRITTEN' } = {}) {
+function generateTask({ intentFlag = '--intent', defaultOut = 'bounded-task.json', defaultBuilder = 'demo', defaultReviewer = 'demo', label = 'TASK_WRITTEN', allowDemoScopeExpansion = true } = {}) {
   const repoArg = option('--repo'); const intent = option(intentFlag);
   if (!repoArg || !intent) throw new Error('USAGE:bar task --repo <git-repo> --intent <text> [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test] [--out task.json]');
   const repo = path.resolve(repoArg); const top = git(repo, ['rev-parse','--show-toplevel']);
@@ -70,7 +70,10 @@ function generateTask({ intentFlag = '--intent', defaultOut = 'bounded-task.json
   let entries = options('--allow').map(value=>value.replaceAll('\\','/').replace(/^\.\//,'').replace(/\/$/,''));
   if (has('--allow-all')) entries=[...repoEntries];
   if (!entries.length) throw new Error('ALLOWED_PATH_REQUIRED:use --allow <path> (repeatable) or explicit --allow-all');
-  if (builder === 'demo' && !entries.includes('demo-output')) entries.push('demo-output');
+  if (builder === 'demo' && !entries.includes('demo-output')) {
+    if (!allowDemoScopeExpansion) throw new Error('WORK_DEMO_SCOPE_REQUIRED:add `--allow demo-output` explicitly when using the synthetic demo builder');
+    entries.push('demo-output');
+  }
   const task = {
     schema_version: 1,
     task_id: option('--id', `bar-${Date.now()}`),
@@ -91,11 +94,22 @@ function generateTask({ intentFlag = '--intent', defaultOut = 'bounded-task.json
   console.log(`${label} ${out}`);
   return { out, task };
 }
+function assertWorkVerification(command, args) {
+  const exe = String(command || '').toLowerCase().replace(/\\/g,'/').split('/').at(-1)?.replace(/\.exe$/,'') || '';
+  const a = (args || []).map(value => String(value).toLowerCase());
+  const npmLike = ['npm','pnpm','yarn'].includes(exe) && (a[0] === 'test' || (a[0] === 'run' && ['test','lint','build','check','verify','typecheck'].includes(a[1])));
+  const nodeTest = exe === 'node' && a.includes('--test');
+  const pytest = exe === 'pytest' || (['python','python3','py'].includes(exe) && a[0] === '-m' && a[1] === 'pytest');
+  const native = (exe === 'go' && a[0] === 'test') || (exe === 'cargo' && ['test','check','clippy'].includes(a[0])) || (exe === 'dotnet' && ['test','build'].includes(a[0])) || (['mvn','mvnw'].includes(exe) && a.includes('test')) || (['gradle','gradlew','make'].includes(exe) && a.some(value => ['test','check','verify','build'].includes(value)));
+  if (!(npmLike || nodeTest || pytest || native)) throw new Error('WORK_VERIFICATION_NOT_MEANINGFUL:use a recognized test/check/build verification command; lower-level `bar task` remains available for custom verification');
+}
+
 function workRequest() {
   if (!option('--repo') || !option('--goal')) throw new Error('USAGE:bar work --repo <git-repo> --goal <text> --allow <path> [--allow <path>] [--builder auto|...] [--reviewer auto|...] --verify <cmd> [--verify-arg <arg>] [--dry-run]');
   if (!option('--verify')) throw new Error('WORK_VERIFICATION_REQUIRED:bar work requires an explicit controller-observed verification command');
+  assertWorkVerification(option('--verify'), options('--verify-arg'));
   if (fs.existsSync(STATE_FILE) && !has('--dry-run')) throw new Error('WORK_RUNTIME_NOT_EMPTY:inspect `bar status` and reset deliberately before starting another work request');
-  const { out, task } = generateTask({ intentFlag: '--goal', defaultOut: 'bounded-work-request.json', defaultBuilder: 'auto', defaultReviewer: 'auto', label: 'WORK_REQUEST_WRITTEN' });
+  const { out, task } = generateTask({ intentFlag: '--goal', defaultOut: 'bounded-work-request.json', defaultBuilder: 'auto', defaultReviewer: 'auto', label: 'WORK_REQUEST_WRITTEN', allowDemoScopeExpansion: false });
   console.log('WORK_REQUEST_RESOLVED');
   console.log(`Goal: ${task.intent}`);
   console.log(`Source: ${task.source.ref}`);
@@ -160,7 +174,9 @@ function friendlyError(message) {
     ['AUTO_ADAPTER_UNAVAILABLE','No installed adapter can satisfy that role. Run `bar agents`, install one, then recreate the task.'],
     ['CONTROLLER_EXIT','The controller failed closed. Run `bar status` and `bar recover`; inspect the attached controller error before resetting.'],
     ['QUICKSTART_PREREQUISITE_FAILED','A required prerequisite is missing. Run `bar doctor` for the exact check and install it before retrying.'],
-    ['WORK_RUNTIME_NOT_EMPTY','An existing controller task is still active. Inspect `bar status`; use `bar reset` only when you deliberately want to discard it.']
+    ['WORK_RUNTIME_NOT_EMPTY','An existing controller task is still active. Inspect `bar status`; use `bar reset` only when you deliberately want to discard it.'],
+    ['WORK_DEMO_SCOPE_REQUIRED','The synthetic demo builder writes `demo-output`; grant that path explicitly or choose another builder.'],
+    ['WORK_VERIFICATION_NOT_MEANINGFUL','Use a recognized test/check/build command for the simple `bar work` path. Use lower-level `bar task` for a custom verifier.']
   ];
   const hit=guides.find(([prefix])=>message.startsWith(prefix));
   return hit ? `${message}\nNEXT: ${hit[1]}` : message;
