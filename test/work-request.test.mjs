@@ -155,3 +155,15 @@ test('work rejects audit output inside the source repository', () => {
   assert.equal(fs.existsSync(out), false);
   assert.equal(execFileSync('git', ['status','--porcelain=v1','--untracked-files=all'], { cwd: src, encoding: 'utf8' }).trim(), '');
 });
+
+
+test('work validates task id before deriving audit path', () => {
+  const src = sourceRepo();
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'bar-work-id-'));
+  const root = path.join(cwd, 'runtime');
+  const env = { ...process.env, BOUNDED_AGENT_RUNTIME_ROOT: root };
+  const result = run(['work','--repo',src,'--goal','Fix x','--id','../escape','--allow','src','--allow','demo-output','--builder','demo','--reviewer','demo','--verify','node','--verify-arg=--test','--verify-arg','verify.test.mjs','--dry-run'], cwd, env);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /TASK_ID_INVALID/);
+  assert.equal(fs.existsSync(path.join(root, 'escape.json')), false);
+});

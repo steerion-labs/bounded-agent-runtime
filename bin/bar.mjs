@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { RUNTIME_ROOT, STATE_FILE, readJson } from '../runtime/core.mjs';
+import { RUNTIME_ROOT, STATE_FILE, readJson, validateTask } from '../runtime/core.mjs';
 import { doctorReport, formatDoctor } from '../runtime/doctor.mjs';
 import { adapterDefinitions, assertAdapterName, selectAvailableAdapter } from '../runtime/adapters/registry.mjs';
 
@@ -89,6 +89,7 @@ function generateTask({ intentFlag = '--intent', defaultOut = 'bounded-task.json
     budget: { model_calls: 4, wall_clock_seconds: Number(option('--seconds', '900')), retries: 1 },
     ...(option('--verify') ? { verification: { ...(verificationSemantics ? { semantics: verificationSemantics } : {}), commands: [{ command: option('--verify'), args: options('--verify-arg'), timeout_seconds: Number(option('--verify-timeout', '120')) }] } } : {})
   };
+  validateTask(task);
   const fallbackOut = typeof defaultOut === 'function' ? defaultOut(task) : defaultOut;
   const requestedOut = option('--out');
   const out = path.resolve(requestedOut || fallbackOut);
