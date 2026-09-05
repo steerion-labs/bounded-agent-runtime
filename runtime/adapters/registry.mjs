@@ -6,6 +6,7 @@ const definitions = Object.freeze({
   codex: { roles: ['builder', 'reviewer'], executable: 'codex', boundary: 'workspace-write builder / read-only reviewer' },
   claude: { roles: ['builder', 'reviewer'], executable: 'claude', boundary: 'edit-only builder / plan+read reviewer' },
   opencode: { roles: ['builder', 'reviewer'], executable: 'opencode', boundary: 'pure mode; BAR verifies workspace/candidate' },
+  'prime-agent': { roles: ['builder', 'reviewer'], executable: 'prime-agent', boundary: 'POC only; ephemeral no-skills session, credential-stripped environment, disposable workspace' },
   ollama: { roles: ['reviewer'], executable: 'ollama', boundary: 'reviewer only' },
   container: { roles: ['builder', 'reviewer'], executable: 'docker', boundary: 'disposable network-none container' },
   generic: { roles: ['builder', 'reviewer'], executable: null, boundary: 'operator-supplied; controller checks remain mandatory' }
@@ -21,7 +22,6 @@ export function assertAdapterName(name, role) {
   if (!def.roles.includes(role)) throw new Error(`ADAPTER_ROLE_UNSUPPORTED:${name}:${role}`);
   return name;
 }
-
 
 export function selectAvailableAdapter(role, agents) {
   const order = role === 'builder' ? ['codex','claude','opencode','container','generic'] : ['codex','claude','opencode','ollama','container','generic'];
