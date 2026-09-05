@@ -1,5 +1,18 @@
 # Steerion Labs Bounded Agent Runtime — Engineering Contract
 
+## Sol Foreman orchestration
+Vebi explicitly authorized Sol Foreman for this repository on 2026-09-05.
+Use the globally installed `sol-foreman` skill as the default orchestration layer for multi-step, delegated, parallel, risky, or long-running work, subject to all BAR authority boundaries and Human Gates below.
+
+- Reconnoiter first and define observable acceptance criteria and proof before dispatch.
+- Builders never certify their own work; require independent verification before DONE.
+- Keep worker write sets isolated and preserve exact-head evidence, approval binding, fencing, recovery and idempotency guarantees.
+- Prefer native Codex workers when delegation is useful.
+- Do not make billable/external model calls, start paid cloud resources, request new permissions, or use Fable 5/Mythos without explicit separate user approval.
+- Never expose secrets, credentials, private data, or raw authentication responses in tickets, logs, prompts, or evidence.
+- Sol Foreman never grants merge, release, deploy, GO, production or authority-expansion rights.
+- If `sol-foreman` is unavailable, degrade honestly to lead-only execution with the same verification discipline; never fake delegation or verification.
+
 ## Roles
 - Architect / Orchestrator: defines bounded tasks, acceptance criteria and required evidence.
 - Builder: an explicitly selected agent adapter executes only the approved task scope.
