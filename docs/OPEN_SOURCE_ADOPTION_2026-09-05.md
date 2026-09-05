@@ -27,13 +27,13 @@ BAR is the model-agnostic authority/security runtime around coding agents. Curre
 ## Approved pinned skill — diagram-design
 - Decision: SKILL.
 - Source: `cathrynlavery/diagram-design`.
-- Upstream main verified 2026-09-05 at commit `4451eadc484d76aa860edf3289c16fcd082dcdbf`.
+- Upstream version-2.0 source verified 2026-09-05 at commit `ced802198d622cfe544fbc1d2b5452e038a5f55f`; current upstream HEAD `4451eadc484d76aa860edf3289c16fcd082dcdbf` reports skill metadata 2.6 and is excluded from this approved pin.
 - Skill: `diagram-design`.
 - Skill metadata version: `2.0`.
 - License: MIT.
 - Install scope: repo-/agent-specific documentation/reviewer capability only; not global.
 - Authority: NONE. Skill metadata is untrusted input and may never broaden the BAR task authority envelope.
-- Status: `HOST_BLOCKED` — no local installation/load smoke/eval PASS is claimed while the authorized host is offline.
+- Status: `INSTALLED_LOCAL_POC` - repo-local `.claude/skills/diagram-design` installed at exact 2.0/MIT source pin; metadata/load and harmless bundled architecture-fixture presence smoke PASS. No BAR runtime or authority path changed; DEEP exact-head review remains open.
 - Host-return checks: install from pinned source, discovery/load smoke, harmless fixture diagram, verify capability requests remain bounded by the Skill-Permission Contract, no browser/network/credential authority, `git diff --check`, targeted negatives, independent DEEP exact-head review.
 - Rollback: remove the repo-specific skill reference/files; no runtime authority migration involved.
 
