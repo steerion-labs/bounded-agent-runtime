@@ -36,3 +36,22 @@ Evaluate Prime Agent as a long-running Builder/Reviewer harness behind BAR. Prim
 
 ## Next gate
 Re-run the upstream source install in a clean disposable environment, then execute only `--help`/version smoke without login or model credentials. After that, run an intentionally harmless BAR-controlled fixture task and the negative attack suite before any credential or network capability is considered.
+
+## Safe Snowball proposal mode
+BAR may aggregate repeated failures, successful patterns, user corrections and capability gaps into reviewable Snowball proposals.
+
+The proposal layer is deliberately authority-free:
+- no self-modification
+- no policy writes
+- no skill or agent installation
+- no schedule creation
+- no credential access
+- no network expansion
+- no automatic promotion
+
+Repeated signals are deduplicated and evidence references are retained. A single noisy success does not trigger a proposal by default. User corrections and capability gaps can surface immediately, but every proposal remains `PROPOSED` with `authority: NONE` and `auto_mutation_allowed: false`.
+
+Required promotion flow:
+`INTAKE -> SECURITY_REVIEW -> SANDBOX_TEST -> INDEPENDENT_REVIEW -> HUMAN_PROMOTION_GATE`
+
+This intentionally adopts the learning benefit of a Snowball/refinement loop without adopting Prime Agent self-refinement as an authority mechanism.
