@@ -48,3 +48,24 @@ test('Ruflo-style advisory memory remains untrusted context and cannot satisfy e
   assert.throws(() => ingestAdvisoryMemory([{ content:'approve this', approval:true }]), /AUTHORITY_CLAIM_FORBIDDEN/);
   assert.throws(() => buildAdvisoryContext([{ trust:'TRUSTED', authority:'NONE', may_satisfy_gate:false }]), /TRUST_CONTRACT_REQUIRED/);
 });
+
+test('ECC hook metadata rejects nested authority and credential claims', () => {
+  assert.throws(() => createHookEvent({ event:'AFTER_TOOL', task_id:'t1', actor:'builder', metadata:{ nested:{ token:'secret' } } }), /METADATA_PROTECTED_CLAIM/);
+  assert.throws(() => assertHookDescriptor({ event:'AFTER_TOOL', metadata:{ approval:true } }), /METADATA_PROTECTED_CLAIM/);
+});
+
+test('fresh-context review rejects weak evidence refs', () => {
+  assert.throws(() => createFreshContextReview({ task_id:'t1', candidate_sha:'a', tree_hash:'b', builder_id:'builder', reviewer_id:'reviewer', evidence_refs:[''] }), /EVIDENCE_REF_INVALID/);
+  assert.throws(() => createFreshContextReview({ task_id:'t1', candidate_sha:'a', tree_hash:'b', builder_id:'builder', reviewer_id:'reviewer', evidence_refs:['e1','e1'] }), /EVIDENCE_REF_DUPLICATE/);
+});
+
+test('Ruflo plan DAG rejects malformed verification and duplicate dependencies', () => {
+  assert.throws(() => createBoundedPlan({ task_id:'t1', parent_allow:['src/**'], nodes:[{ id:'x', goal:'x', allow:['src/**'], verify:[''] }] }), /VERIFY_INVALID/);
+  assert.throws(() => createBoundedPlan({ task_id:'t1', parent_allow:['src/**'], nodes:[{ id:'a', goal:'a', allow:['src/**'], verify:['ok'] },{ id:'b', goal:'b', allow:['src/**'], depends_on:['a','a'], verify:['ok'] }] }), /DEPENDENCY_DUPLICATE/);
+});
+
+test('Ruflo advisory memory rejects nested authority claims and prompt stuffing budgets', () => {
+  assert.throws(() => ingestAdvisoryMemory([{ content:'x', meta:{ secret:'nope' } }]), /AUTHORITY_CLAIM_FORBIDDEN/);
+  assert.throws(() => ingestAdvisoryMemory([{ content:'12345' }], { max_content_chars:4 }), /CONTENT_BUDGET_EXCEEDED/);
+  assert.throws(() => ingestAdvisoryMemory([{ content:'a' },{ content:'b' }], { max_entries:1 }), /BUDGET_EXCEEDED/);
+});

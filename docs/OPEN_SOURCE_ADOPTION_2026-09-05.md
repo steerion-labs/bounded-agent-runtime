@@ -145,3 +145,9 @@ Conclusion: BAR should remain the immutable authority/evidence kernel. ECC shoul
 Every dependency/adapter must pin upstream version/commit, record license, define capability/authority separation, run negative tests, prove fail-closed behavior, and preserve current Human Gate semantics.
 
 For ECC and Ruflo specifically, the first implementation phase is contract-level adoption and isolated POCs only. Installing either full framework or enabling autonomous/background/federated execution requires a separate explicit Human Accept after dependency, credential, network, update-channel and rollback review.
+### ECC/Ruflo bounded-contract hardening 2026-09-06
+- ECC hook metadata now rejects nested authority, approval, credential, token and secret claims.
+- Fresh-context review rejects empty or duplicate evidence references.
+- Ruflo-style Plan DAG validates non-empty verification/dependency entries and duplicate dependencies/parent permissions fail closed.
+- Advisory memory recursively rejects hidden authority/credential claims and enforces entry/content budgets against prompt stuffing.
+- These layers remain advisory/process-only and cannot authorize protected actions or widen BAR authority.
