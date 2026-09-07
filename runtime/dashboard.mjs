@@ -4,80 +4,54 @@ import { STATE_FILE, readJson } from './core.mjs';
 import { doctorReport } from './doctor.mjs';
 
 const text = value => value === null || value === undefined ? '' : String(value).slice(0, 512);
+const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
+
+function stateOrNull(){ return fs.existsSync(STATE_FILE) ? readJson(STATE_FILE) : null; }
 
 export function publicStatus() {
-  if (!fs.existsSync(STATE_FILE)) return { initialized:false, state:'NOT_INITIALIZED', evidence_count:0, gate_state:'NOT_REQUIRED' };
-  const state = readJson(STATE_FILE);
+  const state=stateOrNull();
+  if (!state) return { initialized:false, state:'NOT_INITIALIZED', evidence_count:0, gate_state:'NOT_REQUIRED' };
   const gateState = state.state === 'HUMAN_GATE' ? 'WAITING' : (state.human_approval ? 'APPROVAL_RECORDED' : 'NOT_REQUIRED');
-  return {
-    initialized:true,
-    task_id:text(state.task_id),
-    state:text(state.state),
-    state_version:Number(state.state_version || 0),
-    candidate_sha:text(state.candidate_sha),
-    tree_hash:text(state.tree_hash),
-    builder_adapter:text(state.task?.workers?.builder?.adapter || 'demo'),
-    reviewer_adapter:text(state.task?.workers?.reviewer?.adapter || 'demo'),
-    evidence_count:Array.isArray(state.evidence) ? state.evidence.length : 0,
-    gate_state:gateState
-  };
+  return { initialized:true, task_id:text(state.task_id), state:text(state.state), state_version:num(state.state_version),
+    candidate_sha:text(state.candidate_sha), tree_hash:text(state.tree_hash),
+    builder_adapter:text(state.task?.workers?.builder?.adapter || 'demo'), reviewer_adapter:text(state.task?.workers?.reviewer?.adapter || 'demo'),
+    evidence_count:Array.isArray(state.evidence) ? state.evidence.length : 0, gate_state:gateState };
 }
 
 export function publicEvidence() {
-  if (!fs.existsSync(STATE_FILE)) return [];
-  const evidence = Array.isArray(readJson(STATE_FILE).evidence) ? readJson(STATE_FILE).evidence : [];
-  return evidence.map(item => ({
-    evidence_id:text(item.evidence_id),
-    claim:text(item.claim),
-    producer_identity:text(item.producer_identity),
-    trust_class:text(item.trust_class),
-    candidate_sha:text(item.candidate_sha),
-    tree_hash:text(item.tree_hash),
-    created_at:text(item.created_at),
-    status:text(item.status)
-  })).sort((a,b) => a.created_at.localeCompare(b.created_at));
+  const state=stateOrNull(); if (!state) return [];
+  const evidence=Array.isArray(state.evidence)?state.evidence:[];
+  return evidence.map(item=>({ evidence_id:text(item.evidence_id), claim:text(item.claim), producer_identity:text(item.producer_identity),
+    trust_class:text(item.trust_class), candidate_sha:text(item.candidate_sha), tree_hash:text(item.tree_hash), created_at:text(item.created_at), status:text(item.status) }))
+    .sort((a,b)=>a.created_at.localeCompare(b.created_at));
+}
+
+export function publicTelemetry() {
+  const state=stateOrNull();
+  if(!state) return { initialized:false, runtime:{elapsed_seconds:0,wall_clock_limit_seconds:0,wall_clock_remaining_seconds:0}, budget:{model_calls:{used:0,limit:0},retries:{used:0,limit:0}}, swarm:{mode:'LAB_ONLY',active_agents:0,max_agents:4,max_parallel:2,authority:'NONE'} };
+  const limits=state.budget?.limits||state.task?.budget||{}; const used=state.budget?.used||{};
+  const started=Date.parse(state.started_at||''); const elapsed=Number.isFinite(started)?Math.max(0,Math.floor((Date.now()-started)/1000)):0;
+  const wall=num(limits.wall_clock_seconds); const modelLimit=num(limits.model_calls); const retryLimit=num(limits.retries);
+  return { initialized:true, runtime:{elapsed_seconds:elapsed,wall_clock_limit_seconds:wall,wall_clock_remaining_seconds:Math.max(0,wall-elapsed)},
+    budget:{model_calls:{used:num(used.model_calls),limit:modelLimit},retries:{used:num(used.retries),limit:retryLimit}},
+    workers:{builder:text(state.task?.workers?.builder?.adapter||'demo'),reviewer:text(state.task?.workers?.reviewer?.adapter||'demo')},
+    swarm:{mode:'LAB_ONLY',active_agents:0,max_agents:4,max_parallel:2,authority:'NONE'},
+    safety:{human_gate:true,exact_candidate_binding:true,automatic_promotion:false,automatic_background_workers:false} };
 }
 
 export function dashboardHtml() {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bounded Agent Runtime</title><style>
-body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#0b1020;color:#edf2ff;margin:0;padding:32px}main{max-width:1080px;margin:auto}.hero{margin-bottom:28px}.muted{color:#9aa7c2}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}.card{background:#151d33;border:1px solid #283552;border-radius:14px;padding:18px;margin-top:14px}.big{font-size:26px;font-weight:700}.flow{display:flex;gap:8px;flex-wrap:wrap;margin:22px 0}.step{padding:10px 14px;border-radius:999px;background:#202b49}.active{outline:2px solid #8bc5ff}.ok{color:#76e3a5}.warn{color:#ffd166}.bad{color:#ff8c8c}code{word-break:break-all}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:9px;border-bottom:1px solid #283552;vertical-align:top}.empty{padding:14px 0;color:#9aa7c2}</style></head><body><main>
-<div class="hero"><h1>Bounded Agent Runtime</h1><p class="muted">Read-only local evidence view. Authority stays in the controller and authenticated Human Gate.</p></div>
-<div class="grid"><div class="card"><div class="muted">State</div><div class="big" id="state">Loading</div></div><div class="card"><div class="muted">Evidence</div><div class="big" id="evidence-count">0</div></div><div class="card"><div class="muted">Human Gate</div><div class="big" id="gate">-</div></div><div class="card"><div class="muted">Doctor</div><div class="big" id="doctor">-</div></div></div>
-<div class="flow" id="flow"></div>
-<div class="card"><h3>Exact candidate</h3><div class="muted">Commit SHA</div><code id="candidate">not created</code><div class="muted" style="margin-top:12px">Tree hash</div><code id="tree"></code><h3>Workers</h3><p id="workers"></p></div>
-<div class="card"><h3>Evidence timeline</h3><div id="timeline-empty" class="empty">No evidence recorded.</div><table id="timeline" hidden><thead><tr><th>Time</th><th>Claim</th><th>Status</th><th>Producer</th><th>Trust</th><th>Candidate</th></tr></thead><tbody id="timeline-body"></tbody></table></div>
-<script>
-const stages=['NEW','CLASSIFIED','CONTEXT_READY','AUTHORIZED','BUILDING','TESTING','HANDOFF_VALIDATION','REVIEWING','REVIEW_READY','HUMAN_GATE','ACCEPTED'];
-const byId=id=>document.getElementById(id);
-const setText=(id,value)=>{byId(id).textContent=value===null||value===undefined?'':String(value)};
-function renderFlow(state){const root=byId('flow');root.replaceChildren();for(const stage of stages){const el=document.createElement('span');el.className='step'+(stage===state?' active':'');el.textContent=stage;root.appendChild(el)}}
-function renderEvidence(items){const body=byId('timeline-body');body.replaceChildren();const table=byId('timeline');const empty=byId('timeline-empty');if(!items.length){table.hidden=true;empty.hidden=false;return}table.hidden=false;empty.hidden=true;for(const item of items){const row=document.createElement('tr');for(const value of [item.created_at,item.claim,item.status,item.producer_identity,item.trust_class,item.candidate_sha]){const cell=document.createElement('td');cell.textContent=value||'-';row.appendChild(cell)}body.appendChild(row)}}
-async function load(){const [s,e,d]=await Promise.all([fetch('/api/status').then(r=>r.json()),fetch('/api/evidence').then(r=>r.json()),fetch('/api/doctor').then(r=>r.json())]);setText('state',s.state);setText('evidence-count',s.evidence_count||0);setText('gate',s.gate_state||'NOT_REQUIRED');byId('gate').className='big '+(s.gate_state==='WAITING'?'warn':'ok');setText('doctor',d.status);setText('candidate',s.candidate_sha||'not created');setText('tree',s.tree_hash||'');setText('workers',(s.builder_adapter||'-')+' → '+(s.reviewer_adapter||'-'));renderFlow(s.state);renderEvidence(e)}
-load();setInterval(load,3000);
-</script></main></body></html>`;
+return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BAR Operations</title><style>
+:root{color-scheme:dark;--bg:#07110e;--panel:rgba(15,31,26,.86);--line:#24483d;--soft:#8aa79d;--text:#effaf5;--mint:#60f2b0;--cyan:#70d7ff;--gold:#e8c66a;--red:#ff7f87}*{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;background:radial-gradient(circle at 20% 0,#123b2d 0,transparent 35%),radial-gradient(circle at 90% 10%,#10263a 0,transparent 28%),var(--bg);color:var(--text);min-height:100vh}body:before{content:"";position:fixed;inset:0;background-image:linear-gradient(rgba(96,242,176,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(96,242,176,.035) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}main{width:min(1240px,calc(100% - 32px));margin:auto;padding:34px 0 52px}.top{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:28px}.eyebrow{font-size:12px;letter-spacing:.18em;color:var(--mint);font-weight:800}.brand{font-size:clamp(34px,5vw,62px);line-height:.95;margin:8px 0 10px;font-weight:850;letter-spacing:-.04em}.brand span{background:linear-gradient(90deg,#fff,var(--mint),var(--cyan));-webkit-background-clip:text;color:transparent}.sub{color:var(--soft);max-width:760px;font-size:15px;line-height:1.6}.live{display:flex;align-items:center;gap:9px;border:1px solid var(--line);background:rgba(8,22,17,.72);padding:10px 13px;border-radius:999px;color:#c8e8dc;font-size:12px;white-space:nowrap}.dot{width:8px;height:8px;border-radius:50%;background:var(--mint);box-shadow:0 0 0 6px rgba(96,242,176,.1),0 0 18px var(--mint)}.metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin:18px 0}.card{border:1px solid rgba(104,180,153,.22);background:linear-gradient(180deg,rgba(18,39,32,.88),rgba(9,24,19,.82));backdrop-filter:blur(16px);border-radius:18px;padding:18px;box-shadow:0 18px 50px rgba(0,0,0,.18)}.label{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--soft);font-weight:800}.value{font-size:27px;font-weight:820;margin-top:9px}.mint{color:var(--mint)}.gold{color:var(--gold)}.cyan{color:var(--cyan)}.flow{display:flex;gap:7px;overflow:auto;padding:8px 2px 18px}.step{flex:0 0 auto;padding:8px 11px;border:1px solid #24483d;border-radius:10px;color:#6f9185;font-size:10px;font-weight:800;letter-spacing:.04em}.step.done{color:#b8e8d7;border-color:#34715c;background:rgba(52,113,92,.14)}.step.active{color:#07110e;background:var(--mint);border-color:var(--mint);box-shadow:0 0 22px rgba(96,242,176,.25)}.cols{display:grid;grid-template-columns:1.15fr .85fr;gap:14px}.title{font-size:16px;font-weight:800;margin:0 0 15px}.barrow{display:grid;grid-template-columns:130px 1fr 74px;gap:12px;align-items:center;margin:13px 0}.track{height:8px;background:#0a1813;border-radius:999px;overflow:hidden;border:1px solid #1c3b31}.fill{height:100%;width:0;background:linear-gradient(90deg,var(--mint),var(--cyan));transition:width .35s}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;color:#b7d5cb;word-break:break-all}.agentgrid{display:grid;grid-template-columns:1fr 64px 1fr;align-items:center;gap:10px}.agent{border:1px solid #24483d;border-radius:14px;padding:15px;background:#0b1b16}.arrow{text-align:center;color:var(--mint);font-size:22px}.pill{display:inline-flex;border:1px solid #315849;border-radius:999px;padding:5px 8px;font-size:10px;color:#9dc5b6;margin-top:8px}.swarm{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.node{min-height:100px;border:1px dashed #315849;border-radius:14px;padding:13px;position:relative;background:rgba(7,17,14,.45)}.node:before{content:"";position:absolute;right:12px;top:12px;width:7px;height:7px;border-radius:50%;background:#406b5c}.node.active:before{background:var(--cyan);box-shadow:0 0 12px var(--cyan)}.guard{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.guard div{border:1px solid #24483d;border-radius:12px;padding:11px;font-size:11px;color:#a8c4ba}.guard strong{display:block;color:var(--mint);margin-bottom:5px}.timeline{width:100%;border-collapse:collapse;font-size:12px}.timeline th,.timeline td{text-align:left;padding:10px 7px;border-bottom:1px solid rgba(65,105,91,.28);vertical-align:top}.timeline th{color:#78998d;font-size:10px;text-transform:uppercase;letter-spacing:.08em}.empty{color:var(--soft);padding:12px 0}.footer{margin-top:16px;color:#65877b;font-size:11px}@media(max-width:1000px){.metrics{grid-template-columns:repeat(3,1fr)}.cols{grid-template-columns:1fr}.swarm,.guard{grid-template-columns:repeat(2,1fr)}}@media(max-width:620px){main{width:min(100% - 20px,1240px);padding-top:22px}.top{display:block}.live{margin-top:16px;width:max-content}.metrics{grid-template-columns:repeat(2,1fr)}.value{font-size:22px}.agentgrid{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}.swarm,.guard{grid-template-columns:1fr}.barrow{grid-template-columns:100px 1fr 60px}}
+</style></head><body><main><div class="top"><div><div class="eyebrow">STEERION LABS ? CONTROL PLANE</div><div class="brand"><span>Bounded Agent Runtime</span></div><div class="sub">Read-only local evidence view. Authority-bounded agent execution with exact evidence binding, independent review and authenticated Human Gate.</div></div><div class="live"><span class="dot"></span> LOCAL ? READ ONLY ? LIVE</div></div>
+<div class="metrics"><div class="card"><div class="label">Runtime State</div><div class="value mint" id="state">Loading</div></div><div class="card"><div class="label">Evidence</div><div class="value" id="evidence-count">0</div></div><div class="card"><div class="label">Human Gate</div><div class="value gold" id="gate">-</div></div><div class="card"><div class="label">Health</div><div class="value cyan" id="doctor">-</div></div><div class="card"><div class="label">Model Calls</div><div class="value" id="calls">0 / 0</div></div><div class="card"><div class="label">Time Left</div><div class="value" id="time-left">0s</div></div></div>
+<div class="flow" id="flow"></div><div class="cols"><div class="card"><h2 class="title">Exact candidate & Agent Chain</h2><div class="label">Commit SHA</div><div class="mono" id="candidate">not created</div><div class="label" style="margin-top:12px">Tree Hash</div><div class="mono" id="tree">-</div><div style="height:18px"></div><div class="agentgrid"><div class="agent"><div class="label">Builder</div><div class="value" style="font-size:20px" id="builder">-</div><span class="pill">BOUNDED WRITE</span></div><div class="arrow">?</div><div class="agent"><div class="label">Reviewer</div><div class="value" style="font-size:20px" id="reviewer">-</div><span class="pill">FRESH CONTEXT ? READ ONLY</span></div></div></div>
+<div class="card"><h2 class="title">Budget Envelope</h2><div class="barrow"><div class="label">Model calls</div><div class="track"><div class="fill" id="calls-bar"></div></div><div class="mono" id="calls-small">0 / 0</div></div><div class="barrow"><div class="label">Retries</div><div class="track"><div class="fill" id="retries-bar"></div></div><div class="mono" id="retries">0 / 0</div></div><div class="barrow"><div class="label">Wall clock</div><div class="track"><div class="fill" id="time-bar"></div></div><div class="mono" id="elapsed">0s</div></div><div class="footer">Budgets are controller-owned. Exhaustion fails closed.</div></div></div>
+<div class="card"><h2 class="title">Ruflo-inspired Swarm Lab <span class="pill">LAB ONLY</span></h2><div class="swarm"><div class="node active"><div class="label">Coordinator</div><div class="value" style="font-size:17px">BAR Planner</div><div class="footer">No execution authority</div></div><div class="node"><div class="label">Agent 01</div><div class="value" style="font-size:17px">Builder</div><div class="footer">Subset authority only</div></div><div class="node"><div class="label">Agent 02</div><div class="value" style="font-size:17px">Verifier</div><div class="footer">Evidence producer</div></div><div class="node"><div class="label">Agent 03</div><div class="value" style="font-size:17px">Reviewer</div><div class="footer">Read only</div></div></div><div class="footer">Max 4 agents ? Max 2 parallel ? No scope union ? No swarm consensus can approve protected actions.</div></div>
+<div class="card"><h2 class="title">Authority Guardrails</h2><div class="guard"><div><strong>EXACT BINDING</strong>Candidate SHA + tree hash</div><div><strong>HUMAN GATE</strong>Protected actions stay human</div><div><strong>NO AUTO PROMOTION</strong>Snowball remains proposal-only</div><div><strong>NO BACKGROUND AUTHORITY</strong>Workers cannot self-start</div></div></div>
+<div class="card"><h2 class="title">Evidence timeline</h2><div id="timeline-empty" class="empty">No evidence recorded.</div><table id="timeline" class="timeline" hidden><thead><tr><th>Time</th><th>Claim</th><th>Status</th><th>Producer</th><th>Trust</th><th>Candidate</th></tr></thead><tbody id="timeline-body"></tbody></table></div>
+<script>const stages=['NEW','CLASSIFIED','CONTEXT_READY','AUTHORIZED','BUILDING','TESTING','HANDOFF_VALIDATION','REVIEWING','REVIEW_READY','HUMAN_GATE','ACCEPTED'];const byId=id=>document.getElementById(id);const setText=(id,v)=>{byId(id).textContent=v===null||v===undefined?'':String(v)};const pct=(u,l)=>!l?0:Math.max(0,Math.min(100,(u/l)*100));function renderFlow(state){const root=byId('flow');root.replaceChildren();const active=stages.indexOf(state);stages.forEach((stage,i)=>{const el=document.createElement('span');el.className='step'+(stage===state?' active':i<active?' done':'');el.textContent=stage;root.appendChild(el)})}function renderEvidence(items){const body=byId('timeline-body');body.replaceChildren();const table=byId('timeline'),empty=byId('timeline-empty');if(!items.length){table.hidden=true;empty.hidden=false;return}table.hidden=false;empty.hidden=true;for(const item of items){const row=document.createElement('tr');for(const value of [item.created_at,item.claim,item.status,item.producer_identity,item.trust_class,item.candidate_sha]){const cell=document.createElement('td');cell.textContent=value||'-';row.appendChild(cell)}body.appendChild(row)}}async function load(){const [s,e,d,t]=await Promise.all([fetch('/api/status').then(r=>r.json()),fetch('/api/evidence').then(r=>r.json()),fetch('/api/doctor').then(r=>r.json()),fetch('/api/telemetry').then(r=>r.json())]);setText('state',s.state);setText('evidence-count',s.evidence_count||0);setText('gate',s.gate_state||'NOT_REQUIRED');setText('doctor',d.status);setText('candidate',s.candidate_sha||'not created');setText('tree',s.tree_hash||'-');setText('builder',s.builder_adapter||'-');setText('reviewer',s.reviewer_adapter||'-');const mc=t.budget?.model_calls||{used:0,limit:0},rt=t.budget?.retries||{used:0,limit:0},run=t.runtime||{};setText('calls',mc.used+' / '+mc.limit);setText('calls-small',mc.used+' / '+mc.limit);setText('retries',rt.used+' / '+rt.limit);setText('time-left',(run.wall_clock_remaining_seconds||0)+'s');setText('elapsed',(run.elapsed_seconds||0)+'s');byId('calls-bar').style.width=pct(mc.used,mc.limit)+'%';byId('retries-bar').style.width=pct(rt.used,rt.limit)+'%';byId('time-bar').style.width=pct(run.elapsed_seconds,run.wall_clock_limit_seconds)+'%';renderFlow(s.state);renderEvidence(e)}load();setInterval(load,3000);</script></main></body></html>`;
 }
 
-function json(res, value) {
-  const body = JSON.stringify(value, null, 2);
-  res.writeHead(200, { 'content-type':'application/json; charset=utf-8', 'cache-control':'no-store', 'content-security-policy':"default-src 'none'", 'x-content-type-options':'nosniff' });
-  res.end(body);
-}
-
-export function createDashboardServer({ host='127.0.0.1', port=4780 }={}) {
-  if (!['127.0.0.1','::1','localhost'].includes(host)) throw new Error('DASHBOARD_LOOPBACK_ONLY');
-  return http.createServer((req,res) => {
-    if (req.method !== 'GET') { res.writeHead(405,{allow:'GET'}); res.end('Method Not Allowed'); return; }
-    if (req.url === '/api/status') return json(res,publicStatus());
-    if (req.url === '/api/evidence') return json(res,publicEvidence());
-    if (req.url === '/api/doctor') return json(res,doctorReport());
-    if (req.url === '/' || req.url === '/index.html') {
-      res.writeHead(200,{ 'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'none'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'" });
-      res.end(dashboardHtml()); return;
-    }
-    res.writeHead(404); res.end('Not Found');
-  }).listen(port,host);
-}
-
-if (process.argv[1] && import.meta.url === new URL(`file:///${process.argv[1].replaceAll('\\','/')}`).href) {
-  const port=Number(process.argv[2]||4780); createDashboardServer({port}); console.log(`BAR_DASHBOARD http://127.0.0.1:${port}`);
-}
+function json(res,value){const body=JSON.stringify(value,null,2);res.writeHead(200,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','content-security-policy':"default-src 'none'",'x-content-type-options':'nosniff'});res.end(body)}
+export function createDashboardServer({host='127.0.0.1',port=4780}={}){if(!['127.0.0.1','::1','localhost'].includes(host))throw new Error('DASHBOARD_LOOPBACK_ONLY');return http.createServer((req,res)=>{if(req.method!=='GET'){res.writeHead(405,{allow:'GET'});res.end('Method Not Allowed');return}if(req.url==='/api/status')return json(res,publicStatus());if(req.url==='/api/evidence')return json(res,publicEvidence());if(req.url==='/api/doctor')return json(res,doctorReport());if(req.url==='/api/telemetry')return json(res,publicTelemetry());if(req.url==='/'||req.url==='/index.html'){res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'none'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"});res.end(dashboardHtml());return}res.writeHead(404);res.end('Not Found')}).listen(port,host)}
+if(process.argv[1]&&import.meta.url===new URL(`file:///${process.argv[1].replaceAll('\\','/')}`).href){const port=Number(process.argv[2]||4780);createDashboardServer({port});console.log(`BAR_DASHBOARD http://127.0.0.1:${port}`)}

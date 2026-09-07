@@ -151,3 +151,10 @@ For ECC and Ruflo specifically, the first implementation phase is contract-level
 - Ruflo-style Plan DAG validates non-empty verification/dependency entries and duplicate dependencies/parent permissions fail closed.
 - Advisory memory recursively rejects hidden authority/credential claims and enforces entry/content budgets against prompt stuffing.
 - These layers remain advisory/process-only and cannot authorize protected actions or widen BAR authority.
+
+## Ruflo Telemetry + Swarm Lab implemented
+- Read-only Operations Cockpit exposes runtime state, evidence count, Human Gate, health, exact candidate, worker chain and controller budgets.
+- /api/telemetry is GET-only and loopback-only through the existing dashboard server.
+- Swarm Lab is contract-level only: max 4 agents, max 2 parallel, bounded model calls/wall clock, inherited subset authority only.
+- Coordinator has no execution authority. Swarm consensus cannot approve/merge/deploy. No background workers or credentials.
+- Responsive dark Steerion Labs control-plane UI added without write controls or approval endpoints.
