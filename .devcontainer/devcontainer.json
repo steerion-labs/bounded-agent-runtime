@@ -1,0 +1,1 @@
+{"name":"BAR Codespace","image":"mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm","hostRequirements":{"cpus":2,"memory":"8gb","storage":"32gb"},"postCreateCommand":"npm ci","customizations":{"vscode":{"settings":{"terminal.integrated.defaultProfile.linux":"bash"}}},"remoteUser":"node"}
