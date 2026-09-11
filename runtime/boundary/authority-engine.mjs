@@ -5,6 +5,14 @@ function deny(reason) { return Object.freeze({ decision: AUTHORITY_DECISIONS.DEN
 
 export function decideBoundaryAuthority({ task, registry, capability_id, action, role, evidence = [], controller_state = null }) {
   if (!task || !registry || !capability_id) return deny('MISSING_CONTEXT');
+  if (task.protected_actions !== undefined) {
+    if (!Array.isArray(task.protected_actions)) return deny('PROTECTED_ACTION_POLICY_INVALID');
+    const knownActions = new Set(registry.list().flatMap(entry => entry.actions));
+    const invalidProtectedAction = task.protected_actions.some(value =>
+      typeof value !== 'string' || !/^[a-z0-9][a-z0-9._-]{1,79}$/.test(value) || !knownActions.has(value)
+    );
+    if (invalidProtectedAction) return deny('PROTECTED_ACTION_POLICY_INVALID');
+  }
   const capability = registry.get(capability_id);
   if (!capability) return deny('CAPABILITY_UNKNOWN');
   if (!Array.isArray(task.allowed_capabilities) || !task.allowed_capabilities.includes(capability.id)) return deny('CAPABILITY_NOT_ALLOWED');
