@@ -23,11 +23,12 @@ function option(name, fallback = null) {
 function has(name) { return argv.includes(name); }
 function canonical(value) { if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']'; if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key)+':'+canonical(value[key])).join(',') + '}'; return JSON.stringify(value); }
 function options(name) { const values=[]; for(let i=0;i<argv.length;i+=1){ const token=argv[i]; if(token===name){ const value=argv[i+1]; if(value===undefined||value.startsWith('--')) throw new Error(`OPTION_VALUE_REQUIRED:${name}`); values.push(value); } else if(token.startsWith(`${name}=`)){ const value=token.slice(name.length+1); if(!value) throw new Error(`OPTION_VALUE_REQUIRED:${name}`); values.push(value); } } return values; }
-function controller(args, { env = process.env, capture = false } = {}) {
+function controller(args, { env = process.env, capture = false, allowFailure = false } = {}) {
   const result = spawnSync(process.execPath, [path.join(root, 'runtime', 'controller.mjs'), ...args], { stdio: capture ? ['ignore','pipe','pipe'] : 'inherit', encoding: capture ? 'utf8' : undefined, env, windowsHide: true });
-  if (result.status !== 0) throw new Error(`CONTROLLER_EXIT:${result.status}:${String(result.stderr || '').trim()}`);
+  if (result.status !== 0 && !allowFailure) throw new Error(`CONTROLLER_EXIT:${result.status}:${String(result.stderr || '').trim()}`);
   return result;
 }
+
 function git(repo, args) {
   const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', windowsHide: true });
   if (result.status !== 0) throw new Error(`GIT_FAILED:${String(result.stderr || '').trim()}`);
@@ -158,6 +159,16 @@ function showStatus(asJson = false) {
   if (asJson) return console.log(JSON.stringify(view, null, 2));
   console.log(['BAR status',`Task: ${view.task_id}`,`State: ${view.state}`,`Builder / Reviewer: ${view.builder_adapter} / ${view.reviewer_adapter}`,`Candidate: ${view.candidate_sha || 'not built yet'}`,`Evidence: ${view.evidence_count}`,`Human Gate: ${view.human_gate_required ? 'REQUIRED' : (view.human_approval ? 'APPROVED' : 'not reached')}`,`Next: ${view.next_step}`].join('\n'));
 }
+function quickstartTempBase() {
+  const candidates=[os.tmpdir(), path.join(os.homedir(),'.bar','tmp'), path.join(path.dirname(process.cwd()),'.bar-tmp')];
+  for (const candidate of [...new Set(candidates.filter(Boolean))]) {
+    try {
+      fs.mkdirSync(candidate,{recursive:true}); fs.accessSync(candidate,fs.constants.R_OK|fs.constants.W_OK);
+      const probe=fs.mkdtempSync(path.join(candidate,'bar-probe-')); fs.rmSync(probe,{recursive:true,force:true}); return candidate;
+    } catch {}
+  }
+  throw new Error('QUICKSTART_TEMP_UNUSABLE:no writable temporary directory found');
+}
 function quickstart() {
   const report=doctorReport();
   const failed=report.checks.filter(x=>x.severity==='required'&&!x.ok);
@@ -165,7 +176,7 @@ function quickstart() {
   console.log('1/4 Prerequisites');
   if(failed.length) throw new Error(`QUICKSTART_PREREQUISITE_FAILED:${failed.map(x=>x.id).join(',')}`);
   console.log('    PASS Node 20+ and Git');
-  const demoRoot=fs.mkdtempSync(path.join(os.tmpdir(),'bar-quickstart-'));
+  const demoRoot=fs.mkdtempSync(path.join(quickstartTempBase(),'bar-quickstart-'));
   const env={...process.env,BOUNDED_AGENT_RUNTIME_ROOT:path.join(demoRoot,'runtime')};
   try {
     console.log('2/4 Initialize isolated synthetic task'); controller(['init',path.join(root,'examples','task.example.json')],{env,capture:true});
@@ -188,6 +199,7 @@ function friendlyError(message) {
     ['AUTO_ADAPTER_UNAVAILABLE','No installed adapter can satisfy that role. Run `bar agents`, install one, then recreate the task.'],
     ['CONTROLLER_EXIT','The controller failed closed. Run `bar status` and `bar recover`; inspect the attached controller error before resetting.'],
     ['QUICKSTART_PREREQUISITE_FAILED','A required prerequisite is missing. Run `bar doctor` for the exact check and install it before retrying.'],
+    ['QUICKSTART_TEMP_UNUSABLE','BAR could not find or create a writable temporary directory. Fix TEMP/TMP/TMPDIR permissions or provide a writable user profile/home directory.'],
     ['WORK_RUNTIME_NOT_EMPTY','An existing controller task is still active. Inspect `bar status`; use `bar reset` only when you deliberately want to discard it.'],
     ['WORK_DEMO_SCOPE_REQUIRED','The synthetic demo builder writes `demo-output`; grant that path explicitly or choose another builder.'],
     ['WORK_VERIFICATION_PROFILE_REQUIRED','Use a recognized test/check/build command shape. BAR records exact execution evidence but does not claim semantic adequacy.']
@@ -196,7 +208,7 @@ function friendlyError(message) {
   return hit ? `${message}\nNEXT: ${hit[1]}` : message;
 }
 function help() {
-  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar work --repo <path> --goal <text> --allow <path> [--builder auto] [--reviewer auto] [--verify npm --verify-arg test] [--dry-run]\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action> [--json]\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
+  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar work --repo <path> --goal <text> --allow <path> [--builder auto] [--reviewer auto] [--verify npm --verify-arg test] [--dry-run]\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action> [--json]\nbar verify-authorization <protected-action> [--json]\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
 }
 
 try {
@@ -213,7 +225,8 @@ try {
   else if (command === 'gate' && argv[0] === 'keygen') { const dir=argv[1] || '.human-gate'; const result=spawnSync(process.execPath,[path.join(root,'runtime','gate.mjs'),'keygen',path.resolve(dir)],{stdio:'inherit',env:process.env,windowsHide:true}); if(result.status!==0) throw new Error(`GATE_EXIT:${result.status}`); }
   else if (command === 'gate' && argv[0] === 'sign') { const key=argv[1]; if(!key) throw new Error('PRIVATE_KEY_REQUIRED'); const result=spawnSync(process.execPath,[path.join(root,'runtime','gate.mjs'),'sign',path.resolve(key)],{stdio:'inherit',env:process.env,windowsHide:true}); if(result.status!==0) throw new Error(`GATE_EXIT:${result.status}`); }
   else if (command === 'approve') { const signature=argv[0]; if(!signature) throw new Error('APPROVAL_SIGNATURE_REQUIRED'); controller(['approve',signature]); }
-  else if (command === 'authorize') { const action=argv[0]; if(!action) throw new Error('PROTECTED_ACTION_REQUIRED'); controller(['authorize-protected',action,...(has('--json')?['--json']:[])]); }
+  else if (command === 'authorize') { const action=argv.find(token=>!token.startsWith('--')); if(!action) throw new Error('PROTECTED_ACTION_REQUIRED'); const result=controller(['authorize-protected',action,...(has('--json')?['--json']:[])],{allowFailure:true}); if(result.status!==0) process.exitCode=result.status; }
+  else if (command === 'verify-authorization') { const action=argv.find(token=>!token.startsWith('--')); if(!action) throw new Error('PROTECTED_ACTION_REQUIRED'); const result=controller(['verify-authorization',action,...(has('--json')?['--json']:[])],{allowFailure:true}); if(result.status!==0) process.exitCode=result.status; }
   else if (command === 'dashboard') {
     const { createDashboardServer } = await import('../runtime/dashboard.mjs'); const port = Number(option('--port', '4780'));
     createDashboardServer({ port }); console.log(`BAR_DASHBOARD http://127.0.0.1:${port}`);

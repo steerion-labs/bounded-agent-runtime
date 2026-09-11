@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
+import { verifyAuthorizationReceipt } from '../runtime/core.mjs';
 
 const repo=path.resolve(import.meta.dirname,'..');
 const controller=path.join(repo,'runtime','controller.mjs');
@@ -68,7 +69,28 @@ test('approval succeeds for task whose only protected action is merge',()=>{
   assert.equal(approved.status,0,approved.stderr); assert.match(approved.stdout,/ACCEPTED_NO_REMOTE_MUTATION_EXECUTED/);
   const auth=run(['authorize-protected','merge'],cwd,keys.env); assert.equal(auth.status,0,auth.stderr); assert.match(auth.stdout,/PROTECTED_ACTION_AUTHORIZED merge/);
   const receiptRun=run(['authorize-protected','merge','--json'],cwd,keys.env); assert.equal(receiptRun.status,0,receiptRun.stderr);
-  const receipt=JSON.parse(receiptRun.stdout); assert.equal(receipt.schema_version,'bar.authorization-receipt.v1'); assert.equal(receipt.action,'merge'); assert.equal(receipt.candidate_sha.length,40); assert.equal(receipt.tree_hash.length,40); assert.ok(receipt.signed_payload_hash);
+  const receipt=JSON.parse(receiptRun.stdout); assert.equal(receipt.schema_version,'bar.authorization-receipt.v2'); assert.equal(receipt.requested_action,'merge'); assert.equal(receipt.approval_scope,'declared_protected_actions'); assert.deepEqual(receipt.declared_protected_actions,['merge']); assert.equal(receipt.candidate_sha.length,40); assert.equal(receipt.tree_hash.length,40); assert.ok(receipt.approval_signed_payload_hash); assert.ok(receipt.receipt_id); assert.ok(receipt.issued_at); assert.ok(receipt.controller_signature);
+  const receiptPublicKey=fs.readFileSync(path.join(rootFor(cwd),'secrets','authorization-receipt-public.pem'),'utf8'); assert.equal(verifyAuthorizationReceipt(receipt,receiptPublicKey),true);
+  const tampered={...receipt,requested_action:'deploy'}; assert.throws(()=>verifyAuthorizationReceipt(tampered,receiptPublicKey),/AUTHORIZATION_RECEIPT_SIGNATURE_INVALID/);
+  const secondRun=run(['authorize-protected','merge','--json'],cwd,keys.env); assert.equal(secondRun.status,0,secondRun.stderr); const second=JSON.parse(secondRun.stdout); assert.notEqual(second.receipt_id,receipt.receipt_id); assert.notEqual(second.controller_signature,receipt.controller_signature);
+  const journal=fs.readFileSync(journalFor(cwd),'utf8'); assert.match(journal,/PROTECTED_ACTION_AUTHORIZED/); assert.match(journal,new RegExp(receipt.receipt_id));
+});
+
+test('authorization JSON denial is stable before approval',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-auth-denial-')); const keys=setupKeys(cwd);
+  const mergeOnly=JSON.parse(fs.readFileSync(task,'utf8')); mergeOnly.allowed_actions=mergeOnly.allowed_actions.filter(x=>x!=='remote_mutation'); mergeOnly.protected_actions=['merge'];
+  const localTask=path.join(cwd,'task.json'); fs.writeFileSync(localTask,JSON.stringify(mergeOnly,null,2));
+  assert.equal(run(['init',localTask],cwd,keys.env).status,0); assert.equal(run(['run'],cwd,keys.env).status,0);
+  const denied=run(['authorize-protected','merge','--json'],cwd,keys.env); assert.equal(denied.status,2); const body=JSON.parse(denied.stdout); assert.equal(body.status,'DENIED'); assert.equal(body.reason_code,'HUMAN_GATE_REQUIRED'); assert.equal(body.requested_action,'merge');
+});
+
+test('verify-authorization rechecks accepted authority without mutating state',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-auth-verify-')); const keys=setupKeys(cwd);
+  const mergeOnly=JSON.parse(fs.readFileSync(task,'utf8')); mergeOnly.allowed_actions=mergeOnly.allowed_actions.filter(x=>x!=='remote_mutation'); mergeOnly.protected_actions=['merge'];
+  const localTask=path.join(cwd,'task.json'); fs.writeFileSync(localTask,JSON.stringify(mergeOnly,null,2));
+  assert.equal(run(['init',localTask],cwd,keys.env).status,0); assert.equal(run(['run'],cwd,keys.env).status,0);
+  const signed=spawnSync(process.execPath,[gate,'sign',path.join(keys.keyDir,'private.pem')],{cwd,encoding:'utf8',env:keys.env}); assert.equal(signed.status,0,signed.stderr); assert.equal(run(['approve',signed.stdout.trim()],cwd,keys.env).status,0);
+  const before=fs.readFileSync(stateFor(cwd),'utf8'); const checked=run(['verify-authorization','merge','--json'],cwd,keys.env); assert.equal(checked.status,0,checked.stderr); const view=JSON.parse(checked.stdout); assert.equal(view.status,'VERIFIED'); assert.equal(view.requested_action,'merge'); const after=fs.readFileSync(stateFor(cwd),'utf8'); assert.equal(after,before);
 });
 
 test('approval key substitution fails fingerprint pinning',()=>{

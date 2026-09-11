@@ -18,6 +18,8 @@ export const JOURNAL_FILE = path.join(JOURNAL_DIR, 'journal.jsonl');
 const JOURNAL_KEY_FILE = path.join(SECRETS_DIR, 'journal-hmac.key');
 const JOURNAL_ANCHOR_FILE = path.join(SECRETS_DIR, 'journal-anchor.json');
 const NONCE_LEDGER_FILE = path.join(SECRETS_DIR, 'human-gate-nonces.json');
+const AUTH_RECEIPT_PRIVATE_KEY_FILE = path.join(SECRETS_DIR, 'authorization-receipt-private.pem');
+export const AUTH_RECEIPT_PUBLIC_KEY_FILE = path.join(SECRETS_DIR, 'authorization-receipt-public.pem');
 const CONTROLLER_LOCK_DIR = path.join(CORE_DIR, 'controller-lock');
 const CONTROLLER_LOCK_OWNER = path.join(CONTROLLER_LOCK_DIR, 'owner.json');
 let SAFE_HOOKS_DIR = null;
@@ -417,12 +419,14 @@ export function publicKeyFingerprint(publicKeyPem) {
   return sha256(der);
 }
 export function createGateChallenge(state) {
+  const protected_actions = [...(state.task?.protected_actions ?? [])].sort();
   return { task_id: state.task_id, candidate_sha: state.candidate_sha, tree_hash: state.tree_hash,
-    state_version: state.state_version, nonce: crypto.randomUUID() };
+    state_version: state.state_version, protected_actions_hash: sha256(JSON.stringify(protected_actions)), nonce: crypto.randomUUID() };
 }
+
 export function canonicalGatePayload(challenge, decisionIdentity, decision = 'ACCEPT') {
-  const { task_id, candidate_sha, tree_hash, state_version, nonce } = challenge;
-  return JSON.stringify({ task_id, candidate_sha, tree_hash, state_version, nonce, decision, decision_identity: decisionIdentity });
+  const { task_id, candidate_sha, tree_hash, state_version, protected_actions_hash, nonce } = challenge;
+  return JSON.stringify({ task_id, candidate_sha, tree_hash, state_version, protected_actions_hash, nonce, decision, decision_identity: decisionIdentity });
 }
 export function verifyGateSignature(challenge, signatureBase64, publicKeyPem, decisionIdentity, decision = 'ACCEPT') {
   if (!challenge || !signatureBase64 || !publicKeyPem || !decisionIdentity) throw new Error('GATE_SIGNATURE_INPUT_MISSING');
@@ -430,6 +434,34 @@ export function verifyGateSignature(challenge, signatureBase64, publicKeyPem, de
   if (!ok) throw new Error('INVALID_HUMAN_GATE_SIGNATURE');
   return true;
 }
+function ensureAuthorizationReceiptKeyPair() {
+  ensureRuntimeDir();
+  if (!fs.existsSync(AUTH_RECEIPT_PRIVATE_KEY_FILE) || !fs.existsSync(AUTH_RECEIPT_PUBLIC_KEY_FILE)) {
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+    writeAtomic(AUTH_RECEIPT_PRIVATE_KEY_FILE, privateKey.export({ type: 'pkcs8', format: 'pem' }), 0o600);
+    writeAtomic(AUTH_RECEIPT_PUBLIC_KEY_FILE, publicKey.export({ type: 'spki', format: 'pem' }), 0o600);
+  }
+  return { privateKey: fs.readFileSync(AUTH_RECEIPT_PRIVATE_KEY_FILE, 'utf8'), publicKey: fs.readFileSync(AUTH_RECEIPT_PUBLIC_KEY_FILE, 'utf8') };
+}
+export function canonicalAuthorizationReceipt(receipt) {
+  const { controller_signature, ...base } = receipt;
+  return JSON.stringify(base);
+}
+export function signAuthorizationReceipt(receipt) {
+  const keys = ensureAuthorizationReceiptKeyPair();
+  const controller_key_fingerprint = publicKeyFingerprint(keys.publicKey);
+  const unsigned = { ...receipt, controller_key_fingerprint };
+  const controller_signature = crypto.sign(null, Buffer.from(canonicalAuthorizationReceipt(unsigned)), keys.privateKey).toString('base64');
+  return { ...unsigned, controller_signature };
+}
+export function verifyAuthorizationReceipt(receipt, publicKeyPem) {
+  if (!receipt?.controller_signature || !publicKeyPem) throw new Error('AUTHORIZATION_RECEIPT_SIGNATURE_REQUIRED');
+  if (receipt.controller_key_fingerprint !== publicKeyFingerprint(publicKeyPem)) throw new Error('AUTHORIZATION_RECEIPT_KEY_FINGERPRINT_MISMATCH');
+  const ok = crypto.verify(null, Buffer.from(canonicalAuthorizationReceipt(receipt)), publicKeyPem, Buffer.from(receipt.controller_signature, 'base64'));
+  if (!ok) throw new Error('AUTHORIZATION_RECEIPT_SIGNATURE_INVALID');
+  return true;
+}
+
 function approverPolicy() {
   const keyPath = process.env.BOUNDED_AGENT_APPROVAL_PUBLIC_KEY;
   const expectedFingerprint = process.env.BOUNDED_AGENT_APPROVAL_KEY_FINGERPRINT;
@@ -495,6 +527,8 @@ export function assertHumanApproval(state, action) {
   if (approval.decision !== 'ACCEPT' || approval.decision_identity !== policy.identity || approval.public_key_fingerprint !== policy.fingerprint) throw new Error('HUMAN_APPROVAL_POLICY_MISMATCH');
   verifyGateSignature(approval.challenge, approval.signature, policy.publicKey, policy.identity, approval.decision);
   if (approval.challenge.task_id !== state.task_id || approval.challenge.candidate_sha !== state.candidate_sha || approval.challenge.tree_hash !== state.tree_hash) throw new Error('HUMAN_APPROVAL_BINDING_MISMATCH');
+  const protectedActionsHash = sha256(JSON.stringify([...(state.task?.protected_actions ?? [])].sort()));
+  if (approval.challenge.protected_actions_hash !== protectedActionsHash) throw new Error('HUMAN_APPROVAL_ACTION_SCOPE_MISMATCH');
   if (approval.signed_payload_hash !== challengeHash(approval.challenge, policy.identity)) throw new Error('HUMAN_APPROVAL_HASH_MISMATCH');
   const nonce = assertConsumedNonce(approval.challenge, policy.identity, approval.signature, true);
   if (nonce.status === 'PENDING') commitApprovalNonce(approval.challenge, policy.identity, approval.signature);

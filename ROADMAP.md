@@ -24,7 +24,7 @@ BAR will not move policy or protected authority into an LLM, silently auto-appro
 
 ## Adoption / integration
 
-- [x] Cross-platform quickstart regression coverage for missing TEMP/TMP
-- [x] Machine-readable protected-action authorization receipt
+- [x] Quickstart regression coverage for missing or unusable TEMP/TMP/TMPDIR
+- [x] Controller-signed, journaled protected-action authorization receipt plus read-only verification path
 - [ ] Publish short terminal demo / GIF for a real bounded task
 - [ ] Add reviewed reference integrations that consume authorization receipts without weakening the Human Gate

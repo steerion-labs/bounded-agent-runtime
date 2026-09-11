@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
   STATE_FILE, BUILDER_DIR, REVIEWER_DIR, VERIFICATION_DIR, ensureRuntimeDir, assertProtectedRootConfigured,
   loadState, saveState, journal, transition, newLease, assertCurrentLease, acquireControllerLock, releaseControllerLock, cleanupControllerHooks, claimControllerLease, sha256,
   validateTask, authorize, assertWorkerExecutionBoundary, assertVerificationExecutionBoundary, spendBudget, remainingWallClockMs, evidence, verifyEvidence, verifyStateEvidence,
   ensureGitRepo, seedLocalGitWorkspace, cloneReviewerWorkspace, cloneCandidateWorkspace, commitWorkspace, assertWorkspaceIdentity, assertWorkspaceScope, changedWorkspacePaths, gitExec,
-  createGateChallenge, createHumanApproval, assertHumanApproval, recoverState,
+  createGateChallenge, createHumanApproval, assertHumanApproval, signAuthorizationReceipt, recoverState,
   readJson, resetDemoRuntime
 } from './core.mjs';
 import { assertAdapterName, resolveAdapter } from './adapters/registry.mjs';
@@ -16,7 +17,7 @@ const fail = message => { console.error(message); process.exitCode = 1; };
 const adapterPath = name => path.resolve(import.meta.dirname, 'adapters', name);
 function workerEnv() {
   const env = {};
-  for (const key of ['PATH','Path','SystemRoot','WINDIR','TEMP','TMP','HOME','USERPROFILE','LOCALAPPDATA','APPDATA']) if (process.env[key]) env[key] = process.env[key];
+  for (const key of ['PATH','Path','SystemRoot','WINDIR','TEMP','TMP','TMPDIR','HOME','USERPROFILE','LOCALAPPDATA','APPDATA']) if (process.env[key]) env[key] = process.env[key];
   return env;
 }
 function genericConfig() {
@@ -49,7 +50,7 @@ function runAdapter(state, adapterName, role, input, label) {
 }
 function verificationEnv() {
   const env = {};
-  for (const key of ['PATH','Path','SystemRoot','WINDIR','TEMP','TMP','ComSpec']) if (process.env[key]) env[key] = process.env[key];
+  for (const key of ['PATH','Path','SystemRoot','WINDIR','TEMP','TMP','TMPDIR','ComSpec']) if (process.env[key]) env[key] = process.env[key];
   return env;
 }
 function runVerification(state, builderWorkspace) {
@@ -170,19 +171,56 @@ function approve(signature) {
   console.log('ACCEPTED_NO_REMOTE_MUTATION_EXECUTED');
 }
 function recover() { const state = loadState(); const result = recoverState(state); console.log(result); }
-function authorizeProtected(action) { if (!action) throw new Error('PROTECTED_ACTION_REQUIRED'); const state = loadState(); recoverState(state); claimControllerLease(state); assertCurrentLease(state); if (state.workspace_path) assertWorkspaceIdentity(state, state.workspace_path); verifyStateEvidence(state); if (authorize(state.task, action) !== 'HUMAN_GATE') throw new Error('PROTECTED_ACTION_NOT_DECLARED:' + action); assertHumanApproval(state, action); const receipt={schema_version:'bar.authorization-receipt.v1',task_id:state.task_id,action,candidate_sha:state.candidate_sha,tree_hash:state.tree_hash,decision_identity:state.human_approval.decision_identity,approved_at:state.human_approval.approved_at,signed_payload_hash:state.human_approval.signed_payload_hash,public_key_fingerprint:state.human_approval.public_key_fingerprint}; if(process.argv.includes('--json')) console.log(JSON.stringify(receipt,null,2)); else console.log('PROTECTED_ACTION_AUTHORIZED ' + action); }
+function verifyProtected(action) {
+  if (!action) throw new Error('PROTECTED_ACTION_REQUIRED');
+  const state = loadState(); recoverState(state); assertCurrentLease(state);
+  if (state.workspace_path) assertWorkspaceIdentity(state, state.workspace_path);
+  verifyStateEvidence(state);
+  if (authorize(state.task, action) !== 'HUMAN_GATE') throw new Error('PROTECTED_ACTION_NOT_DECLARED:' + action);
+  assertHumanApproval(state, action);
+  return state;
+}
+function buildAuthorizationReceipt(state, action) {
+  const receipt = {
+    schema_version:'bar.authorization-receipt.v2', receipt_id:crypto.randomUUID(), issued_at:new Date().toISOString(),
+    task_id:state.task_id, requested_action:action, approval_scope:'declared_protected_actions',
+    declared_protected_actions:[...state.task.protected_actions].sort(), candidate_sha:state.candidate_sha, tree_hash:state.tree_hash,
+    source_repo_path:state.task.source?.path ?? null, source_ref:state.task.source?.ref ?? null,
+    state_version:state.state_version, lease_generation:state.lease?.generation ?? null,
+    decision_identity:state.human_approval.decision_identity, approved_at:state.human_approval.approved_at,
+    approval_signed_payload_hash:state.human_approval.signed_payload_hash, approval_public_key_fingerprint:state.human_approval.public_key_fingerprint
+  };
+  return signAuthorizationReceipt(receipt);
+}
+function authorizeProtected(action) {
+  const state = verifyProtected(action); const receipt = buildAuthorizationReceipt(state, action);
+  journal('PROTECTED_ACTION_AUTHORIZED', { task_id:state.task_id, requested_action:action, receipt_id:receipt.receipt_id, candidate_sha:state.candidate_sha, tree_hash:state.tree_hash, decision_identity:state.human_approval.decision_identity, controller_key_fingerprint:receipt.controller_key_fingerprint });
+  if(process.argv.includes('--json')) console.log(JSON.stringify(receipt,null,2)); else console.log('PROTECTED_ACTION_AUTHORIZED ' + action + ' RECEIPT ' + receipt.receipt_id);
+}
+function verifyProtectedCommand(action) {
+  const state = verifyProtected(action);
+  const view={schema_version:'bar.authorization-verification.v1',status:'VERIFIED',task_id:state.task_id,requested_action:action,approval_scope:'declared_protected_actions',declared_protected_actions:[...state.task.protected_actions].sort(),candidate_sha:state.candidate_sha,tree_hash:state.tree_hash,state_version:state.state_version,lease_generation:state.lease?.generation ?? null};
+  if(process.argv.includes('--json')) console.log(JSON.stringify(view,null,2)); else console.log('PROTECTED_ACTION_VERIFIED ' + action);
+}
 function reset() { console.log(resetDemoRuntime()); }
 let controllerLock = null;
 try {
-  if (['init','run','approve','recover','authorize-protected'].includes(command)) controllerLock = acquireControllerLock();
+  if (['init','run','approve','recover','authorize-protected','verify-authorization'].includes(command)) controllerLock = acquireControllerLock();
   if (command === 'init') init(arg);
   else if (command === 'run') run();
   else if (command === 'approve') approve(arg);
   else if (command === 'recover') recover();
   else if (command === 'authorize-protected') authorizeProtected(arg);
+  else if (command === 'verify-authorization') verifyProtectedCommand(arg);
   else if (command === 'reset') reset();
-  else throw new Error('USAGE:init <task.json> | run | approve <signature> | authorize-protected <action> | recover | reset');
-} catch (error) { fail(error instanceof Error ? error.message : String(error)); }
+  else throw new Error('USAGE:init <task.json> | run | approve <signature> | authorize-protected <action> [--json] | verify-authorization <action> [--json] | recover | reset');
+} catch (error) {
+  const message=error instanceof Error ? error.message : String(error);
+  if (['authorize-protected','verify-authorization'].includes(command) && process.argv.includes('--json')) {
+    console.log(JSON.stringify({schema_version:'bar.authorization-denial.v1',status:'DENIED',reason_code:String(message).split(':')[0],requested_action:arg ?? null,message},null,2));
+    process.exitCode=2;
+  } else fail(message);
+}
 finally {
   try { cleanupControllerHooks(); } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
   if (controllerLock) { try { releaseControllerLock(controllerLock); } catch (error) { fail(error instanceof Error ? error.message : String(error)); } }

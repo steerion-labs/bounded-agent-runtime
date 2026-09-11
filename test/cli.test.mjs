@@ -64,9 +64,20 @@ test('bar quickstart reaches Human Gate without architecture knowledge',()=>{
 
 test('bar quickstart works when TEMP and TMP are absent',()=>{
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-quickstart-no-env-'));
-  const env={...process.env,BOUNDED_AGENT_RUNTIME_ROOT:path.join(cwd,'unused')}; delete env.TEMP; delete env.TMP;
+  const env={...process.env,BOUNDED_AGENT_RUNTIME_ROOT:path.join(cwd,'unused')}; delete env.TEMP; delete env.TMP; delete env.TMPDIR;
   const result=run(['quickstart'],cwd,env);
   assert.equal(result.status,0,result.stderr); assert.match(result.stdout,/4\/4 PASS: HUMAN_GATE_REQUIRED/);
+});
+
+test('bar quickstart falls back when configured temp path is unusable',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-quickstart-bad-temp-')); const blocker=path.join(cwd,'not-a-dir'); fs.writeFileSync(blocker,'x');
+  const bad=path.join(blocker,'child'); const env={...process.env,TEMP:bad,TMP:bad,TMPDIR:bad,BOUNDED_AGENT_RUNTIME_ROOT:path.join(cwd,'unused')};
+  const result=run(['quickstart'],cwd,env); assert.equal(result.status,0,result.stderr); assert.match(result.stdout,/4\/4 PASS: HUMAN_GATE_REQUIRED/);
+});
+
+test('authorize accepts --json before action and returns JSON denial only',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-authorize-order-')); const env={...process.env,BOUNDED_AGENT_RUNTIME_ROOT:path.join(cwd,'runtime')};
+  const result=run(['authorize','--json','merge'],cwd,env); assert.equal(result.status,2); const body=JSON.parse(result.stdout); assert.equal(body.status,'DENIED'); assert.equal(body.requested_action,'merge'); assert.equal(body.reason_code,'RUNTIME_NOT_INITIALIZED'); assert.equal(result.stderr.trim(),'');
 });
 
 test('bar status explains next safe step when uninitialized',()=>{

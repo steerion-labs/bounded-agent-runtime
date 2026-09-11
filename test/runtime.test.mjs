@@ -41,6 +41,7 @@ test('gate signature binds identity and exact candidate', () => {
   const pub=publicKey.export({type:'spki',format:'pem'});
   assert.doesNotThrow(() => verifyGateSignature(challenge,sig,pub,identity));
   assert.throws(() => verifyGateSignature({...challenge,candidate_sha:'tampered'},sig,pub,identity), /INVALID_HUMAN_GATE_SIGNATURE/);
+  assert.throws(() => verifyGateSignature({...challenge,protected_actions_hash:'tampered'},sig,pub,identity), /INVALID_HUMAN_GATE_SIGNATURE/);
   assert.throws(() => verifyGateSignature(challenge,sig,pub,'other'), /INVALID_HUMAN_GATE_SIGNATURE/);
 });
 test('controller-derived Git identity detects drift', () => {

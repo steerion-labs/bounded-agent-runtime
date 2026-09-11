@@ -17,8 +17,10 @@
 git clone https://github.com/steerion-labs/bounded-agent-runtime.git
 cd bounded-agent-runtime
 npm install
-npm link
-bar quickstart
+npm run quickstart
+
+# Optional: expose `bar` globally for later commands
+# npm link
 ```
 
 Expected stop:
@@ -88,7 +90,7 @@ flowchart LR
 
 **Builder and Reviewer can be different agents.** BAR owns the candidate identity and the evidence chain between them.
 
-The reference runtime intentionally separates authorization from the system that performs a real merge, deploy or release. `bar authorize <action> --json` emits a machine-readable, exact-candidate authorization receipt for integration and re-checks the Human Gate immediately before handoff. The receipt is audit evidence, not a bearer token; the external adapter remains responsible for the final side effect. See [Protected-action handoff](docs/21-PROTECTED-ACTION-HANDOFF.md).
+The reference runtime intentionally separates authorization from the system that performs a real merge, deploy or release. `bar verify-authorization <action> --json` performs a read-only exact-state re-check. `bar authorize <action> --json` then emits a unique, controller-signed authorization receipt and journals the handoff. Human approval cryptographically binds the exact candidate and the complete declared protected-action scope; the requested action is policy-checked inside that signed scope. The external adapter remains responsible for the final side effect. See [Protected-action handoff](docs/23-PROTECTED-ACTION-HANDOFF.md).
 
 ## Why this is different
 
@@ -205,12 +207,13 @@ See [Windows quickstart](docs/09-QUICKSTART-WINDOWS.md).
 
 ## Start here
 
-- [5-minute explanation](docs/20-WHY-BAR.md)
+- [5-minute explanation](docs/22-WHY-BAR.md)
 - [Architecture](docs/01-ARCHITECTURE.md)
 - [CLI + agent adapters](docs/15-CLI-AND-AGENTS.md)
 - [Adapter conformance contract](docs/19-ADAPTER-CONFORMANCE.md)
 - [MCP + dashboard](docs/16-MCP-AND-DASHBOARD.md)
 - [Container isolation](docs/18-CONTAINER-ISOLATION.md)
+- [Protected-action handoff](docs/23-PROTECTED-ACTION-HANDOFF.md)
 - [Roadmap](ROADMAP.md)
 
 ## Who BAR is for
