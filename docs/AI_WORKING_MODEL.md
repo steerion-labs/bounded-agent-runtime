@@ -4,7 +4,7 @@ Effective: 2026-09-08
 Status: ACTIVE
 
 ## Purpose
-This project follows the shared AI-assisted delivery model used across Vebi's active projects.
+This project follows the shared AI-assisted delivery model used across Steerion Labs projects.
 
 ## Roles
 - Human owner: final decision authority and Human Gate.
@@ -20,7 +20,7 @@ This project follows the shared AI-assisted delivery model used across Vebi's ac
 Claude Code -> local CCR at 127.0.0.1:3458 -> NVIDIA -> nvidia/nemotron-3-super-120b-a12b
 
 Start from the project root with:
-`C:\Users\vebiv\Start-Claude-NVIDIA.ps1`
+`%USERPROFILE%\\Start-Claude-NVIDIA.ps1`
 
 Claude Code is the client and agent interface. The inference model is NVIDIA Nemotron, not an Anthropic Claude model.
 
