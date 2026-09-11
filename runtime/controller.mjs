@@ -175,7 +175,7 @@ function approve(signature) {
 function recover() { const state = loadState(); const result = recoverState(state); console.log(result); }
 function verifyProtected(action) {
   if (!action) throw new Error('PROTECTED_ACTION_REQUIRED');
-  const state = loadState(); recoverState(state);
+  const state = loadState(); recoverState(state); validateTask(state.task);
   if (['ACCEPTED','DONE'].includes(state.state)) assertCurrentFence(state); else assertCurrentLease(state);
   if (state.workspace_path) assertWorkspaceIdentity(state, state.workspace_path);
   verifyStateEvidence(state);

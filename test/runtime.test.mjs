@@ -21,6 +21,13 @@ test('illegal transitions fail closed', () => assert.throws(() => assertTransiti
 test('unknown capability is denied', () => assert.throws(() => authorize({allowed_actions:['build_local'],protected_actions:[]}, 'remote_mutation'), /CAPABILITY_DENIED/));
 test('task-declared protected action routes to Human Gate', () => assert.equal(authorize({allowed_actions:['merge'],protected_actions:['merge']}, 'merge'), 'HUMAN_GATE'));
 test('protected but disallowed action is denied before Human Gate', () => assert.throws(() => authorize({allowed_actions:[],protected_actions:['merge']}, 'merge'), /CAPABILITY_DENIED:merge/));
+test('task validation rejects malformed or unknown protected action identifiers', () => {
+  const base={schema_version:1,task_id:'action-policy',intent:'x',allowed_actions:['build_local','merge'],allowed_paths:['src'],protected_actions:['merge'],budget:{model_calls:1,wall_clock_seconds:10,retries:0}};
+  for (const value of ['merge\u200b','MERGE','unknown_action',5]) {
+    const task=structuredClone(base); task.allowed_actions=['build_local',value]; task.protected_actions=[value];
+    assert.throws(() => validateTask(task), /ACTION_IDENTIFIER_INVALID|PROTECTED_ACTION_POLICY_INVALID/);
+  }
+});
 test('expired lease is rejected', () => assert.throws(() => assertFreshLease(newLease('t1', -1)), /STALE_LEASE/));
 test('fencing mismatch is rejected', () => assert.throws(() => assertFreshLease(newLease('t1',10000,5), 6), /FENCING_MISMATCH/));
 test('model budget exhaustion rejected', () => assert.throws(() => assertBudget({started_at:new Date().toISOString(),budget:{limits:{model_calls:1,wall_clock_seconds:10},used:{model_calls:1}}},{model_calls:1}), /BUDGET_EXCEEDED:model_calls/));

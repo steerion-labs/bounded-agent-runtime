@@ -185,6 +185,13 @@ export function assertCurrentFence(localState) {
   const persisted = loadState();
   if (persisted.lease.generation !== localState.lease.generation) throw new Error('STALE_CONTROLLER_GENERATION');
   if (persisted.lease.fencing_token !== localState.lease.fencing_token) throw new Error('STALE_CONTROLLER_FENCE');
+  const acquired = verifyJournal().filter(entry => entry.event === 'LEASE_ACQUIRED' && entry.task_id === localState.task_id).at(-1);
+  if (!acquired) {
+    if (localState.state === 'NEW') return true;
+    throw new Error('LEASE_JOURNAL_EVIDENCE_REQUIRED');
+  }
+  if (acquired.generation !== localState.lease.generation) throw new Error('STALE_CONTROLLER_GENERATION');
+  if (!acquired.fencing_token_hash || acquired.fencing_token_hash !== sha256(localState.lease.fencing_token)) throw new Error('STALE_CONTROLLER_FENCE');
   return true;
 }
 export function assertCurrentLease(localState) {
@@ -196,7 +203,7 @@ export function claimControllerLease(state) {
   const wallMs = Number.isFinite(state.budget?.limits?.wall_clock_seconds) ? state.budget.limits.wall_clock_seconds * 1000 : 0;
   state.lease = newLease(state.task_id, Math.max(300000, wallMs + 60000), prior + 1);
   saveState(state);
-  journal('LEASE_ACQUIRED', { task_id: state.task_id, generation: state.lease.generation, owner: state.lease.owner, expires_at: state.lease.expires_at });
+  journal('LEASE_ACQUIRED', { task_id: state.task_id, generation: state.lease.generation, fencing_token_hash: sha256(state.lease.fencing_token), owner: state.lease.owner, expires_at: state.lease.expires_at });
   return state.lease;
 }
 export function assertBudget(state, delta = {}) {
@@ -226,7 +233,13 @@ export function validateTask(task) {
     if (!normalized || normalized === '.git' || normalized.startsWith('.git/') || normalized.split('/').includes('..')) throw new Error(`TASK_ALLOWED_PATH_INVALID:${item}`);
   }
   for (const key of ['model_calls','wall_clock_seconds','retries']) if (!Number.isFinite(task.budget[key]) || task.budget[key] < 0) throw new Error(`TASK_BUDGET_INVALID:${key}`);
-  for (const action of task.protected_actions) if (!task.allowed_actions.includes(action)) throw new Error(`PROTECTED_ACTION_NOT_ALLOWED:${action}`);
+  const actionPattern = /^[a-z0-9][a-z0-9._-]{1,79}$/;
+  const knownProtectedActions = new Set(['remote_mutation','merge','deploy','release']);
+  for (const action of task.allowed_actions) if (typeof action !== 'string' || !actionPattern.test(action)) throw new Error('ACTION_IDENTIFIER_INVALID:allowed_actions');
+  for (const action of task.protected_actions) {
+    if (typeof action !== 'string' || !actionPattern.test(action) || !knownProtectedActions.has(action)) throw new Error('PROTECTED_ACTION_POLICY_INVALID');
+    if (!task.allowed_actions.includes(action)) throw new Error(`PROTECTED_ACTION_NOT_ALLOWED:${action}`);
+  }
   if (task.source !== undefined) {
     if (task.source?.kind !== 'local_git' || typeof task.source.path !== 'string' || !path.isAbsolute(task.source.path)) throw new Error('TASK_SOURCE_INVALID');
     if (task.source.ref !== undefined && (typeof task.source.ref !== 'string' || !task.source.ref.trim() || task.source.ref.startsWith('-'))) throw new Error('TASK_SOURCE_REF_INVALID');
@@ -427,12 +440,12 @@ export function publicKeyFingerprint(publicKeyPem) {
 export function createGateChallenge(state) {
   const protected_actions = [...(state.task?.protected_actions ?? [])].sort();
   return { task_id: state.task_id, candidate_sha: state.candidate_sha, tree_hash: state.tree_hash,
-    state_version: state.state_version, protected_actions_hash: sha256(JSON.stringify(protected_actions)), nonce: crypto.randomUUID() };
+    state_version: state.state_version, protected_actions, protected_actions_hash: sha256(JSON.stringify(protected_actions)), nonce: crypto.randomUUID() };
 }
 
 export function canonicalGatePayload(challenge, decisionIdentity, decision = 'ACCEPT') {
-  const { task_id, candidate_sha, tree_hash, state_version, protected_actions_hash, nonce } = challenge;
-  return JSON.stringify({ task_id, candidate_sha, tree_hash, state_version, protected_actions_hash, nonce, decision, decision_identity: decisionIdentity });
+  const { task_id, candidate_sha, tree_hash, state_version, protected_actions, protected_actions_hash, nonce } = challenge;
+  return JSON.stringify({ task_id, candidate_sha, tree_hash, state_version, protected_actions, protected_actions_hash, nonce, decision, decision_identity: decisionIdentity });
 }
 export function verifyGateSignature(challenge, signatureBase64, publicKeyPem, decisionIdentity, decision = 'ACCEPT') {
   if (!challenge || !signatureBase64 || !publicKeyPem || !decisionIdentity) throw new Error('GATE_SIGNATURE_INPUT_MISSING');
@@ -542,7 +555,9 @@ export function assertHumanApproval(state, action) {
   if (approval.decision !== 'ACCEPT' || approval.decision_identity !== policy.identity || approval.public_key_fingerprint !== policy.fingerprint) throw new Error('HUMAN_APPROVAL_POLICY_MISMATCH');
   verifyGateSignature(approval.challenge, approval.signature, policy.publicKey, policy.identity, approval.decision);
   if (approval.challenge.task_id !== state.task_id || approval.challenge.candidate_sha !== state.candidate_sha || approval.challenge.tree_hash !== state.tree_hash) throw new Error('HUMAN_APPROVAL_BINDING_MISMATCH');
-  const protectedActionsHash = sha256(JSON.stringify([...(state.task?.protected_actions ?? [])].sort()));
+  const protectedActions = [...(state.task?.protected_actions ?? [])].sort();
+  const protectedActionsHash = sha256(JSON.stringify(protectedActions));
+  if (JSON.stringify(approval.challenge.protected_actions) !== JSON.stringify(protectedActions)) throw new Error('HUMAN_APPROVAL_ACTION_SCOPE_MISMATCH');
   if (approval.challenge.protected_actions_hash !== protectedActionsHash) throw new Error('HUMAN_APPROVAL_ACTION_SCOPE_MISMATCH');
   if (approval.signed_payload_hash !== challengeHash(approval.challenge, policy.identity)) throw new Error('HUMAN_APPROVAL_HASH_MISMATCH');
   const nonce = assertConsumedNonce(approval.challenge, policy.identity, approval.signature, true);
