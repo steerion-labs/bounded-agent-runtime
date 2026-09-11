@@ -82,3 +82,17 @@ test('obfuscated task policy identifiers cannot authorize a real structured acti
     assert.equal(result.reason, mutation.reason);
   }
 });
+
+
+test('malformed or obfuscated protected action policy fails closed before authorization', () => {
+  for (const protected_actions of [['browser_subm\u200bit'], ['BROWSER_SUBMIT'], ['unknown_action']]) {
+    const boundTask = task({ allowed_capabilities: ['code.modify'], allowed_actions: ['build_local'], protected_actions });
+    const proof = verified(boundTask, 'code.modify', 'build_local', 'builder');
+    const result = decideBoundaryAuthority({
+      task: boundTask, registry, capability_id: 'code.modify', action: 'build_local', role: 'builder',
+      evidence: [proof.item], controller_state: proof.state
+    });
+    assert.equal(result.decision, 'DENY');
+    assert.equal(result.reason, 'PROTECTED_ACTION_POLICY_INVALID');
+  }
+});
