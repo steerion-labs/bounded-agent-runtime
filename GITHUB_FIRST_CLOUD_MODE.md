@@ -17,6 +17,7 @@ BAR is the reference project for proving that normal engineering can continue wi
 - no secrets required for baseline tests/quickstart
 - local agent adapters may be optional, but the deterministic runtime/test path must remain cloud-runnable
 - Actions, CodeQL and Dependabot provide remote evidence independent of the user's PC
+- GitHub Actions are enabled for the repository during the cloud-readiness proof
 
 ## Success condition
 
