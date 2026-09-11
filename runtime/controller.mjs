@@ -4,10 +4,10 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
   STATE_FILE, BUILDER_DIR, REVIEWER_DIR, VERIFICATION_DIR, ensureRuntimeDir, assertProtectedRootConfigured,
-  loadState, saveState, journal, transition, newLease, assertCurrentLease, acquireControllerLock, releaseControllerLock, cleanupControllerHooks, claimControllerLease, sha256,
+  loadState, saveState, journal, transition, newLease, assertCurrentLease, assertCurrentFence, acquireControllerLock, releaseControllerLock, cleanupControllerHooks, claimControllerLease, sha256,
   validateTask, authorize, assertWorkerExecutionBoundary, assertVerificationExecutionBoundary, spendBudget, remainingWallClockMs, evidence, verifyEvidence, verifyStateEvidence,
   ensureGitRepo, seedLocalGitWorkspace, cloneReviewerWorkspace, cloneCandidateWorkspace, commitWorkspace, assertWorkspaceIdentity, assertWorkspaceScope, changedWorkspacePaths, gitExec,
-  createGateChallenge, createHumanApproval, assertHumanApproval, signAuthorizationReceipt, recoverState,
+  createGateChallenge, createHumanApproval, assertHumanApproval, signAuthorizationReceipt, authorizationReceiptPublicKey, recoverState,
   readJson, resetDemoRuntime
 } from './core.mjs';
 import { assertAdapterName, resolveAdapter } from './adapters/registry.mjs';
@@ -91,16 +91,17 @@ function init(file) {
   if (task.workers) { assertAdapterName(task.workers.builder.adapter, 'builder'); assertAdapterName(task.workers.reviewer.adapter, 'reviewer'); }
   const approverIdentity = process.env.BOUNDED_AGENT_APPROVER_IDENTITY || (mode === 'DEMO_MODE' ? 'demo-approver' : null);
   if (!approverIdentity) throw new Error('APPROVER_IDENTITY_REQUIRED');
-  ensureRuntimeDir(); const state = initialState(task, approverIdentity); saveState(state);
-  journal('RUNTIME_INITIALIZED', { task_id: state.task_id, mode });
+  ensureRuntimeDir(); const receiptKey=authorizationReceiptPublicKey(); const state = initialState(task, approverIdentity); saveState(state);
+  journal('RUNTIME_INITIALIZED', { task_id: state.task_id, mode, authorization_receipt_key_fingerprint:receiptKey.fingerprint });
   console.log(`INITIALIZED ${state.task_id}`);
 }
 function run() {
   const state = loadState();
   recoverState(state);
-  claimControllerLease(state); assertCurrentLease(state); validateTask(state.task); remainingWallClockMs(state);
+  validateTask(state.task);
   if (state.state === 'HUMAN_GATE') { console.log('HUMAN_GATE_REQUIRED'); return; }
   if (state.state !== 'NEW') throw new Error(`SAFE_RESUME_REQUIRED:${state.state}`);
+  claimControllerLease(state); assertCurrentLease(state); remainingWallClockMs(state);
 
   transition(state, 'CLASSIFIED');
   transition(state, 'CONTEXT_READY');
@@ -154,11 +155,12 @@ function run() {
   console.log('HUMAN_GATE_REQUIRED'); console.log(JSON.stringify(state.gate_challenge, null, 2));
 }
 function approve(signature) {
-  const state = loadState(); recoverState(state); claimControllerLease(state); assertCurrentLease(state); remainingWallClockMs(state);
+  const state = loadState(); recoverState(state);
   if (state.workspace_path) assertWorkspaceIdentity(state, state.workspace_path);
   verifyStateEvidence(state);
   if (state.state !== 'HUMAN_GATE') throw new Error(`APPROVAL_NOT_ALLOWED_IN:${state.state}`);
   if (!signature) throw new Error('APPROVAL_SIGNATURE_REQUIRED');
+  claimControllerLease(state); assertCurrentLease(state); remainingWallClockMs(state);
   const approval = createHumanApproval(state, signature);
   state.human_approval = approval; saveState(state);
   const approvalEvidence = evidence('human_approval', {
@@ -173,7 +175,8 @@ function approve(signature) {
 function recover() { const state = loadState(); const result = recoverState(state); console.log(result); }
 function verifyProtected(action) {
   if (!action) throw new Error('PROTECTED_ACTION_REQUIRED');
-  const state = loadState(); recoverState(state); assertCurrentLease(state);
+  const state = loadState(); recoverState(state);
+  if (['ACCEPTED','DONE'].includes(state.state)) assertCurrentFence(state); else assertCurrentLease(state);
   if (state.workspace_path) assertWorkspaceIdentity(state, state.workspace_path);
   verifyStateEvidence(state);
   if (authorize(state.task, action) !== 'HUMAN_GATE') throw new Error('PROTECTED_ACTION_NOT_DECLARED:' + action);
@@ -182,10 +185,10 @@ function verifyProtected(action) {
 }
 function buildAuthorizationReceipt(state, action) {
   const receipt = {
-    schema_version:'bar.authorization-receipt.v2', receipt_id:crypto.randomUUID(), issued_at:new Date().toISOString(),
+    schema_version:'bar.authorization-receipt.v3', receipt_id:crypto.randomUUID(), issued_at:new Date().toISOString(),
     task_id:state.task_id, requested_action:action, approval_scope:'declared_protected_actions',
     declared_protected_actions:[...state.task.protected_actions].sort(), candidate_sha:state.candidate_sha, tree_hash:state.tree_hash,
-    source_repo_path:state.task.source?.path ?? null, source_ref:state.task.source?.ref ?? null,
+    source_repo_path:state.task.source?.path ?? null, source_remote_url:state.task.source?.remote_url ?? null, source_ref:state.task.source?.ref ?? null, source_head_sha:state.base_sha ?? state.task.source?.ref ?? null,
     state_version:state.state_version, lease_generation:state.lease?.generation ?? null,
     decision_identity:state.human_approval.decision_identity, approved_at:state.human_approval.approved_at,
     approval_signed_payload_hash:state.human_approval.signed_payload_hash, approval_public_key_fingerprint:state.human_approval.public_key_fingerprint
@@ -205,7 +208,7 @@ function verifyProtectedCommand(action) {
 function reset() { console.log(resetDemoRuntime()); }
 let controllerLock = null;
 try {
-  if (['init','run','approve','recover','authorize-protected','verify-authorization'].includes(command)) controllerLock = acquireControllerLock();
+  if (['init','run','approve','recover','authorize-protected'].includes(command)) controllerLock = acquireControllerLock();
   if (command === 'init') init(arg);
   else if (command === 'run') run();
   else if (command === 'approve') approve(arg);
@@ -217,8 +220,9 @@ try {
 } catch (error) {
   const message=error instanceof Error ? error.message : String(error);
   if (['authorize-protected','verify-authorization'].includes(command) && process.argv.includes('--json')) {
-    console.log(JSON.stringify({schema_version:'bar.authorization-denial.v1',status:'DENIED',reason_code:String(message).split(':')[0],requested_action:arg ?? null,message},null,2));
-    process.exitCode=2;
+    const reason=String(message).split(':')[0]; const unavailable=['CONTROLLER_LOCKED','CONTROLLER_LOCK_ACQUIRE_FAILED','CONTROLLER_LOCK_TAKEOVER_FAILED'].includes(reason);
+    console.log(JSON.stringify({schema_version:unavailable?'bar.authorization-unavailable.v1':'bar.authorization-denial.v1',status:unavailable?'UNAVAILABLE':'DENIED',retryable:unavailable,reason_code:reason,requested_action:arg ?? null,message},null,2));
+    process.exitCode=unavailable?3:2;
   } else fail(message);
 }
 finally {

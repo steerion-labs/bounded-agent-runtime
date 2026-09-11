@@ -7,7 +7,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
   newLease, assertFreshLease, assertBudget, authorize, assertAllowedPath,
-  createGateChallenge, canonicalGatePayload, verifyGateSignature, validateTask,
+  createGateChallenge, canonicalGatePayload, verifyGateSignature, validateTask, canonicalAuthorizationReceipt, verifyAuthorizationReceipt,
   ensureGitRepo, commitWorkspace, gitIdentity, assertWorkspaceIdentity, assertWorkerExecutionBoundary, assertVerificationExecutionBoundary
 } from '../runtime/core.mjs';
 import { assertTransition } from '../runtime/state-machine.mjs';
@@ -44,6 +44,16 @@ test('gate signature binds identity and exact candidate', () => {
   assert.throws(() => verifyGateSignature({...challenge,protected_actions_hash:'tampered'},sig,pub,identity), /INVALID_HUMAN_GATE_SIGNATURE/);
   assert.throws(() => verifyGateSignature(challenge,sig,pub,'other'), /INVALID_HUMAN_GATE_SIGNATURE/);
 });
+test('authorization receipt canonicalization survives key reordering', () => {
+  const {publicKey,privateKey}=crypto.generateKeyPairSync('ed25519');
+  const pub=publicKey.export({type:'spki',format:'pem'});
+  const base={schema_version:'bar.authorization-receipt.v3',receipt_id:'r1',issued_at:'2026-09-11T00:00:00.000Z',task_id:'t1',requested_action:'merge',candidate_sha:'abc',tree_hash:'def',controller_key_fingerprint:crypto.createHash('sha256').update(crypto.createPublicKey(pub).export({type:'spki',format:'der'})).digest('hex')};
+  const sig=crypto.sign(null,Buffer.from(canonicalAuthorizationReceipt(base)),privateKey).toString('base64');
+  const receipt={...base,controller_signature:sig};
+  const reordered={tree_hash:receipt.tree_hash,requested_action:receipt.requested_action,task_id:receipt.task_id,issued_at:receipt.issued_at,receipt_id:receipt.receipt_id,schema_version:receipt.schema_version,candidate_sha:receipt.candidate_sha,controller_key_fingerprint:receipt.controller_key_fingerprint,controller_signature:receipt.controller_signature};
+  assert.equal(verifyAuthorizationReceipt(reordered,pub),true);
+});
+
 test('controller-derived Git identity detects drift', () => {
   const repo=fs.mkdtempSync(path.join(os.tmpdir(),'bar-drift-'));
   const task={allowed_paths:['demo-output/']}; ensureGitRepo(repo);

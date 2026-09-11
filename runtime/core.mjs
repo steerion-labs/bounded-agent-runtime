@@ -180,11 +180,16 @@ export function assertFreshLease(lease, expectedGeneration = lease?.generation) 
   if (!lease || Date.parse(lease.expires_at) <= Date.now()) throw new Error('STALE_LEASE');
   if (lease.generation !== expectedGeneration) throw new Error('FENCING_MISMATCH');
 }
-export function assertCurrentLease(localState) {
-  assertFreshLease(localState.lease, localState.lease.generation);
+export function assertCurrentFence(localState) {
+  if (!localState?.lease) throw new Error('LEASE_REQUIRED');
   const persisted = loadState();
   if (persisted.lease.generation !== localState.lease.generation) throw new Error('STALE_CONTROLLER_GENERATION');
   if (persisted.lease.fencing_token !== localState.lease.fencing_token) throw new Error('STALE_CONTROLLER_FENCE');
+  return true;
+}
+export function assertCurrentLease(localState) {
+  assertFreshLease(localState.lease, localState.lease.generation);
+  return assertCurrentFence(localState);
 }
 export function claimControllerLease(state) {
   const prior = Number.isSafeInteger(state.lease?.generation) ? state.lease.generation : 0;
@@ -225,6 +230,7 @@ export function validateTask(task) {
   if (task.source !== undefined) {
     if (task.source?.kind !== 'local_git' || typeof task.source.path !== 'string' || !path.isAbsolute(task.source.path)) throw new Error('TASK_SOURCE_INVALID');
     if (task.source.ref !== undefined && (typeof task.source.ref !== 'string' || !task.source.ref.trim() || task.source.ref.startsWith('-'))) throw new Error('TASK_SOURCE_REF_INVALID');
+    if (task.source.remote_url !== undefined && (typeof task.source.remote_url !== 'string' || !task.source.remote_url.trim())) throw new Error('TASK_SOURCE_REMOTE_INVALID');
   }
   if (task.verification !== undefined) {
     if (!Array.isArray(task.verification?.commands)) throw new Error('TASK_VERIFICATION_INVALID');
@@ -443,9 +449,14 @@ function ensureAuthorizationReceiptKeyPair() {
   }
   return { privateKey: fs.readFileSync(AUTH_RECEIPT_PRIVATE_KEY_FILE, 'utf8'), publicKey: fs.readFileSync(AUTH_RECEIPT_PUBLIC_KEY_FILE, 'utf8') };
 }
+function canonicalJson(value) {
+  if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
+  if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key)+':'+canonicalJson(value[key])).join(',') + '}';
+  return JSON.stringify(value);
+}
 export function canonicalAuthorizationReceipt(receipt) {
   const { controller_signature, ...base } = receipt;
-  return JSON.stringify(base);
+  return canonicalJson(base);
 }
 export function signAuthorizationReceipt(receipt) {
   const keys = ensureAuthorizationReceiptKeyPair();
@@ -453,6 +464,10 @@ export function signAuthorizationReceipt(receipt) {
   const unsigned = { ...receipt, controller_key_fingerprint };
   const controller_signature = crypto.sign(null, Buffer.from(canonicalAuthorizationReceipt(unsigned)), keys.privateKey).toString('base64');
   return { ...unsigned, controller_signature };
+}
+export function authorizationReceiptPublicKey() {
+  const keys = ensureAuthorizationReceiptKeyPair();
+  return { public_key: keys.publicKey, fingerprint: publicKeyFingerprint(keys.publicKey) };
 }
 export function verifyAuthorizationReceipt(receipt, publicKeyPem) {
   if (!receipt?.controller_signature || !publicKeyPem) throw new Error('AUTHORIZATION_RECEIPT_SIGNATURE_REQUIRED');

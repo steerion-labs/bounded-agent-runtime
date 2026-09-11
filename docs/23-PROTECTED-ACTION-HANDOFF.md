@@ -16,16 +16,18 @@ To issue an auditable handoff receipt:
 bar authorize merge --json
 ```
 
-The receipt contains a unique `receipt_id`, `issued_at`, task/candidate/tree identity, requested action, signed approval scope, state/lease identity and a controller Ed25519 signature. Receipt issuance is also written to the authenticated BAR journal.
+The receipt contains a unique `receipt_id`, `issued_at`, task/candidate/tree identity, requested action, signed approval scope, state/fencing identity, source repo/ref metadata and a controller Ed25519 signature. Receipt issuance is written to the authenticated BAR journal.
 
 The concrete `requested_action` is policy-checked against the human-signed protected-action scope. It is not separately signed by the human. The receipt itself is controller-signed so an external adapter can detect tampering.
 
-A remote adapter must pin the controller receipt public-key fingerprint from a trusted channel and verify the receipt signature before trusting the handoff. Do not trust a public key supplied inside an untrusted receipt.
+Export the controller receipt public key from a trusted BAR runtime with `bar receipt pubkey --json`, pin its fingerprint out of band, then verify a saved receipt with `bar receipt verify <receipt.json> --pubkey <public.pem> --json`. Never trust a key or fingerprint supplied only by an untrusted receipt.
 
 The receipt is not a bearer capability. The external adapter must still verify its own target repository/ref and side-effect semantics, and should call `bar verify-authorization <action>` immediately before the effect.
 
+BAR's controller-created `candidate_sha` normally exists in the isolated Builder workspace, not automatically in the source repository or a remote Git ref. A GitHub/CI integration must explicitly export the candidate as a reviewed patch, bundle or staging ref before a real merge. `source_remote_url`, `source_ref` and `source_head_sha` identify the source side of that handoff; they do not imply the candidate has already been pushed.
+
 ```text
-external adapter -> BAR read-only verify -> BAR signed receipt -> adapter target checks -> side effect
+external adapter -> BAR read-only verify -> BAR signed receipt -> export/stage candidate -> adapter target checks -> side effect
 ```
 
 BAR ships no default real merge/deploy/release adapter because credentials and side-effect semantics differ by environment. This boundary is deliberate.

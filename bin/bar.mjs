@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { RUNTIME_ROOT, STATE_FILE, readJson, validateTask } from '../runtime/core.mjs';
+import { RUNTIME_ROOT, STATE_FILE, readJson, validateTask, authorizationReceiptPublicKey, verifyAuthorizationReceipt } from '../runtime/core.mjs';
 import { doctorReport, formatDoctor } from '../runtime/doctor.mjs';
 import { adapterDefinitions, assertAdapterName, selectAvailableAdapter } from '../runtime/adapters/registry.mjs';
 
@@ -29,6 +29,7 @@ function controller(args, { env = process.env, capture = false, allowFailure = f
   return result;
 }
 
+function gitOptional(repo,args) { const result=spawnSync('git',['-C',repo,...args],{encoding:'utf8',windowsHide:true}); return result.status===0 ? String(result.stdout||'').trim() : null; }
 function git(repo, args) {
   const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', windowsHide: true });
   if (result.status !== 0) throw new Error(`GIT_FAILED:${String(result.stderr || '').trim()}`);
@@ -80,7 +81,7 @@ function generateTask({ intentFlag = '--intent', defaultOut = 'bounded-task.json
     schema_version: 1,
     task_id: option('--id', `bar-${Date.now()}`),
     intent,
-    source: { kind: 'local_git', path: top, ref: git(top, ['rev-parse','HEAD']) },
+    source: { kind: 'local_git', path: top, ref: git(top, ['rev-parse','HEAD']), ...(gitOptional(top,['remote','get-url','origin']) ? {remote_url:gitOptional(top,['remote','get-url','origin'])} : {}) },
     workers: {
       builder: workerSpec('builder',builder),
       reviewer: workerSpec('reviewer',reviewer)
@@ -139,7 +140,7 @@ function workRequest() {
 function nextStepFor(state) {
   if (state === 'NOT_INITIALIZED') return 'Create a task with `bar task ...`, or run `bar quickstart`.';
   if (state === 'HUMAN_GATE') return 'Review the evidence. Sign and approve only if this exact candidate is acceptable.';
-  if (state === 'ACCEPTED') return 'Protected authorization may now be checked with `bar authorize <action>`; BAR still performs no remote mutation.';
+  if (state === 'ACCEPTED') return 'Approval remains candidate-bound. Re-check with `bar verify-authorization <action>` immediately before effect, then use `bar authorize <action>` to issue a signed receipt.';
   if (['REJECTED','FAILED'].includes(state)) return 'Inspect evidence, fix the source/task, then `bar reset` before retrying.';
   return 'Run `bar run` to continue the bounded workflow, or `bar recover` after an interrupted controller.';
 }
@@ -207,8 +208,9 @@ function friendlyError(message) {
   const hit=guides.find(([prefix])=>message.startsWith(prefix));
   return hit ? `${message}\nNEXT: ${hit[1]}` : message;
 }
+function cliJsonDenial(reasonCode, requestedAction=null, message=reasonCode) { console.log(JSON.stringify({schema_version:'bar.authorization-denial.v1',status:'DENIED',reason_code:reasonCode,requested_action:requestedAction,message},null,2)); process.exitCode=2; }
 function help() {
-  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar work --repo <path> --goal <text> --allow <path> [--builder auto] [--reviewer auto] [--verify npm --verify-arg test] [--dry-run]\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action> [--json]\nbar verify-authorization <protected-action> [--json]\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
+  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar work --repo <path> --goal <text> --allow <path> [--builder auto] [--reviewer auto] [--verify npm --verify-arg test] [--dry-run]\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action> [--json]\nbar verify-authorization <protected-action> [--json]\nbar receipt pubkey [--json]\nbar receipt verify <receipt.json> --pubkey <public.pem> [--json]\nbar candidate bundle <out.bundle>\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
 }
 
 try {
@@ -225,8 +227,11 @@ try {
   else if (command === 'gate' && argv[0] === 'keygen') { const dir=argv[1] || '.human-gate'; const result=spawnSync(process.execPath,[path.join(root,'runtime','gate.mjs'),'keygen',path.resolve(dir)],{stdio:'inherit',env:process.env,windowsHide:true}); if(result.status!==0) throw new Error(`GATE_EXIT:${result.status}`); }
   else if (command === 'gate' && argv[0] === 'sign') { const key=argv[1]; if(!key) throw new Error('PRIVATE_KEY_REQUIRED'); const result=spawnSync(process.execPath,[path.join(root,'runtime','gate.mjs'),'sign',path.resolve(key)],{stdio:'inherit',env:process.env,windowsHide:true}); if(result.status!==0) throw new Error(`GATE_EXIT:${result.status}`); }
   else if (command === 'approve') { const signature=argv[0]; if(!signature) throw new Error('APPROVAL_SIGNATURE_REQUIRED'); controller(['approve',signature]); }
-  else if (command === 'authorize') { const action=argv.find(token=>!token.startsWith('--')); if(!action) throw new Error('PROTECTED_ACTION_REQUIRED'); const result=controller(['authorize-protected',action,...(has('--json')?['--json']:[])],{allowFailure:true}); if(result.status!==0) process.exitCode=result.status; }
-  else if (command === 'verify-authorization') { const action=argv.find(token=>!token.startsWith('--')); if(!action) throw new Error('PROTECTED_ACTION_REQUIRED'); const result=controller(['verify-authorization',action,...(has('--json')?['--json']:[])],{allowFailure:true}); if(result.status!==0) process.exitCode=result.status; }
+  else if (command === 'authorize') { const action=argv.find(token=>!token.startsWith('--')); if(!action){ if(has('--json')) cliJsonDenial('PROTECTED_ACTION_REQUIRED'); else throw new Error('PROTECTED_ACTION_REQUIRED'); } else { const result=controller(['authorize-protected',action,...(has('--json')?['--json']:[])],{allowFailure:true}); if(result.status!==0) process.exitCode=result.status; } }
+  else if (command === 'verify-authorization') { const action=argv.find(token=>!token.startsWith('--')); if(!action){ if(has('--json')) cliJsonDenial('PROTECTED_ACTION_REQUIRED'); else throw new Error('PROTECTED_ACTION_REQUIRED'); } else { const result=controller(['verify-authorization',action,...(has('--json')?['--json']:[])],{allowFailure:true}); if(result.status!==0) process.exitCode=result.status; } }
+  else if (command === 'receipt' && argv[0] === 'pubkey') { const key=authorizationReceiptPublicKey(); console.log(has('--json') ? JSON.stringify({schema_version:'bar.receipt-key.v1',fingerprint:key.fingerprint,public_key:key.public_key},null,2) : `FINGERPRINT ${key.fingerprint}\n${key.public_key}`); }
+  else if (command === 'receipt' && argv[0] === 'verify') { const file=argv[1], pubkey=option('--pubkey'); if(!file||!pubkey) throw new Error('USAGE:bar receipt verify <receipt.json> --pubkey <public.pem> [--json]'); const receipt=readJson(path.resolve(file)); const publicKey=fs.readFileSync(path.resolve(pubkey),'utf8'); verifyAuthorizationReceipt(receipt,publicKey); const out={schema_version:'bar.receipt-verification.v1',status:'VERIFIED',receipt_id:receipt.receipt_id,requested_action:receipt.requested_action,controller_key_fingerprint:receipt.controller_key_fingerprint}; console.log(has('--json')?JSON.stringify(out,null,2):`RECEIPT_VERIFIED ${receipt.receipt_id}`); }
+  else if (command === 'candidate' && argv[0] === 'bundle') { const out=argv[1]; if(!out) throw new Error('CANDIDATE_BUNDLE_PATH_REQUIRED'); if(!fs.existsSync(STATE_FILE)) throw new Error('RUNTIME_NOT_INITIALIZED'); const state=readJson(STATE_FILE); if(!state.candidate_sha||!state.tree_hash||!state.workspace_path) throw new Error('CANDIDATE_NOT_AVAILABLE'); const head=git(state.workspace_path,['rev-parse','HEAD']), tree=git(state.workspace_path,['rev-parse','HEAD^{tree}']); if(head!==state.candidate_sha||tree!==state.tree_hash) throw new Error('CANDIDATE_IDENTITY_MISMATCH'); const target=path.resolve(out); if(fs.existsSync(target)) throw new Error('CANDIDATE_BUNDLE_EXISTS'); fs.mkdirSync(path.dirname(target),{recursive:true}); const result=spawnSync('git',['-C',state.workspace_path,'bundle','create',target,'HEAD'],{encoding:'utf8',windowsHide:true}); if(result.status!==0) throw new Error(`CANDIDATE_BUNDLE_FAILED:${String(result.stderr||'').trim()}`); console.log(`CANDIDATE_BUNDLE_WRITTEN ${target} ${state.candidate_sha}`); }
   else if (command === 'dashboard') {
     const { createDashboardServer } = await import('../runtime/dashboard.mjs'); const port = Number(option('--port', '4780'));
     createDashboardServer({ port }); console.log(`BAR_DASHBOARD http://127.0.0.1:${port}`);
