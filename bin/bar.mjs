@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { RUNTIME_ROOT, STATE_FILE, readJson, validateTask } from '../runtime/core.mjs';
@@ -164,7 +165,7 @@ function quickstart() {
   console.log('1/4 Prerequisites');
   if(failed.length) throw new Error(`QUICKSTART_PREREQUISITE_FAILED:${failed.map(x=>x.id).join(',')}`);
   console.log('    PASS Node 20+ and Git');
-  const demoRoot=fs.mkdtempSync(path.join(process.env.TEMP || process.env.TMP || process.cwd(),'bar-quickstart-'));
+  const demoRoot=fs.mkdtempSync(path.join(os.tmpdir(),'bar-quickstart-'));
   const env={...process.env,BOUNDED_AGENT_RUNTIME_ROOT:path.join(demoRoot,'runtime')};
   try {
     console.log('2/4 Initialize isolated synthetic task'); controller(['init',path.join(root,'examples','task.example.json')],{env,capture:true});
@@ -179,6 +180,7 @@ function friendlyError(message) {
   const guides=[
     ['ALLOWED_PATH_REQUIRED','No write scope was granted. Add `--allow <path>` (repeatable) or explicitly use `--allow-all`.'],
     ['SOURCE_REPO_DIRTY','The source repository has uncommitted changes. Commit or stash them, then retry.'],
+    ['PATH_DENIED','The requested path is outside the task authority. Check --allow scopes and the resolved runtime/temp path; BAR fails closed rather than widening scope.'],
     ['TASK_FILE_REQUIRED','No task is initialized. Run `bar task ...` then `bar run --task <file>`, or try `bar quickstart`.'],
     ['RUNTIME_ALREADY_INITIALIZED_FOR','BAR already owns another persisted task. Inspect `bar status`; use `bar reset` only when you intend to discard it.'],
     ['TASK_FILE_MISMATCH','The supplied task differs from persisted authority. Do not overwrite authority in place; inspect status and reset deliberately.'],
@@ -194,7 +196,7 @@ function friendlyError(message) {
   return hit ? `${message}\nNEXT: ${hit[1]}` : message;
 }
 function help() {
-  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar work --repo <path> --goal <text> --allow <path> [--builder auto] [--reviewer auto] [--verify npm --verify-arg test] [--dry-run]\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action>\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
+  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar work --repo <path> --goal <text> --allow <path> [--builder auto] [--reviewer auto] [--verify npm --verify-arg test] [--dry-run]\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action> [--json]\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
 }
 
 try {
@@ -211,7 +213,7 @@ try {
   else if (command === 'gate' && argv[0] === 'keygen') { const dir=argv[1] || '.human-gate'; const result=spawnSync(process.execPath,[path.join(root,'runtime','gate.mjs'),'keygen',path.resolve(dir)],{stdio:'inherit',env:process.env,windowsHide:true}); if(result.status!==0) throw new Error(`GATE_EXIT:${result.status}`); }
   else if (command === 'gate' && argv[0] === 'sign') { const key=argv[1]; if(!key) throw new Error('PRIVATE_KEY_REQUIRED'); const result=spawnSync(process.execPath,[path.join(root,'runtime','gate.mjs'),'sign',path.resolve(key)],{stdio:'inherit',env:process.env,windowsHide:true}); if(result.status!==0) throw new Error(`GATE_EXIT:${result.status}`); }
   else if (command === 'approve') { const signature=argv[0]; if(!signature) throw new Error('APPROVAL_SIGNATURE_REQUIRED'); controller(['approve',signature]); }
-  else if (command === 'authorize') { const action=argv[0]; if(!action) throw new Error('PROTECTED_ACTION_REQUIRED'); controller(['authorize-protected',action]); }
+  else if (command === 'authorize') { const action=argv[0]; if(!action) throw new Error('PROTECTED_ACTION_REQUIRED'); controller(['authorize-protected',action,...(has('--json')?['--json']:[])]); }
   else if (command === 'dashboard') {
     const { createDashboardServer } = await import('../runtime/dashboard.mjs'); const port = Number(option('--port', '4780'));
     createDashboardServer({ port }); console.log(`BAR_DASHBOARD http://127.0.0.1:${port}`);

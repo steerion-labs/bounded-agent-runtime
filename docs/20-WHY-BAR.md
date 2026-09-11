@@ -1,24 +1,20 @@
 # Why put BAR around a coding agent?
 
-A capable coding agent can edit files and run commands. BAR addresses a different problem: deciding what output is allowed to become trusted authority.
+Coding agents are good at producing changes. BAR handles a different problem: **what is allowed to become trusted authority**.
 
-```mermaid
-flowchart TB
-  subgraph Alone["Coding agent alone"]
-    A1[Prompt] --> A2[Agent edits and tests]
-    A2 --> A3[Agent says done]
-  end
-  subgraph WithBAR["Coding agent + BAR"]
-    B1[Task + explicit authority] --> B2[Builder]
-    B2 --> B3[Controller derives exact commit + tree]
-    B3 --> B4[Deterministic verification]
-    B4 --> B5[Separate Reviewer]
-    B5 --> B6[Evidence integrity re-check]
-    B6 --> B7{Authenticated Human Gate}
-  end
+The whole product can be understood with five concepts:
+
+```text
+Task -> Builder -> Verified Candidate -> Reviewer -> Human Gate
 ```
 
-BAR is useful when a team wants agent speed without allowing model output to become its own permission, verification or release boundary.
+1. **Task**: explicit goal, allowed paths, actions and budgets.
+2. **Builder**: Claude Code, Codex, OpenCode, Docker or another adapter does the work.
+3. **Verified Candidate**: BAR derives the exact commit/tree and observes deterministic checks itself.
+4. **Reviewer**: a separate reviewer sees the exact candidate and may not mutate it.
+5. **Human Gate**: protected actions require a signed approval bound to that exact candidate.
+
+BAR is useful when you want agent speed without letting model output become its own permission, verification or release boundary.
 
 ## Five-minute proof
 
@@ -26,15 +22,20 @@ BAR is useful when a team wants agent speed without allowing model output to bec
 bar quickstart
 ```
 
-The command runs an isolated synthetic task and must finish at `HUMAN_GATE_REQUIRED`. It performs no real merge, deploy or release.
+The synthetic task must finish at `HUMAN_GATE_REQUIRED`. No real merge, deploy or release occurs.
 
-## Good fits
+## When BAR adds value
 
-- coding-agent automation in security-conscious teams
-- Builder/Reviewer workflows that need exact candidate identity
-- local or containerized agent experiments where side effects must stay bounded
-- organizations evaluating Codex, Claude Code, OpenCode or custom agents behind one deterministic authority layer
+- autonomous or long-running coding loops
+- separate Builder/Reviewer workflows
+- exact-candidate approval and replay-resistant Human Gates
+- one authority layer across Claude Code, Codex, OpenCode or custom agents
+- environments where controller-observed evidence matters more than "the agent says tests passed"
 
-## Not the goal
+## When normal GitHub controls may be enough
 
-BAR is not trying to replace the coding agent, IDE, CI platform, container runtime or firewall. It is the authority and evidence boundary around those components.
+If your workflow is simply "agent opens a PR, a human reviews it, branch protection merges it", GitHub's native controls may already be sufficient. BAR becomes more useful as agent autonomy, multiple workers, unattended execution or protected side effects increase.
+
+## What BAR is not
+
+BAR is not an IDE, coding model, CI platform, firewall or universal OS sandbox. It is the deterministic authority and evidence boundary around those components.

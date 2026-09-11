@@ -62,6 +62,13 @@ test('bar quickstart reaches Human Gate without architecture knowledge',()=>{
   assert.equal(result.status,0,result.stderr); assert.match(result.stdout,/4\/4 PASS: HUMAN_GATE_REQUIRED/); assert.match(result.stdout,/stopped before any protected remote action/i);
 });
 
+test('bar quickstart works when TEMP and TMP are absent',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-quickstart-no-env-'));
+  const env={...process.env,BOUNDED_AGENT_RUNTIME_ROOT:path.join(cwd,'unused')}; delete env.TEMP; delete env.TMP;
+  const result=run(['quickstart'],cwd,env);
+  assert.equal(result.status,0,result.stderr); assert.match(result.stdout,/4\/4 PASS: HUMAN_GATE_REQUIRED/);
+});
+
 test('bar status explains next safe step when uninitialized',()=>{
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-status-cli-'));
   const result=run(['status'],cwd,{...process.env,BOUNDED_AGENT_RUNTIME_ROOT:path.join(cwd,'runtime')});

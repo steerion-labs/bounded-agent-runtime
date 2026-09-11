@@ -21,3 +21,10 @@ BAR follows an evidence-first roadmap. Items are direction, not promises or deli
 ## Non-goals
 
 BAR will not move policy or protected authority into an LLM, silently auto-approve protected actions, or claim a child process is an OS sandbox.
+
+## Adoption / integration
+
+- [x] Cross-platform quickstart regression coverage for missing TEMP/TMP
+- [x] Machine-readable protected-action authorization receipt
+- [ ] Publish short terminal demo / GIF for a real bounded task
+- [ ] Add reviewed reference integrations that consume authorization receipts without weakening the Human Gate

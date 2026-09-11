@@ -29,6 +29,14 @@ Expected stop:
 
 No real merge. No deploy. No release. The reference quickstart proves its synthetic workflow stops before any protected remote action.
 
+### BAR in five concepts
+
+```text
+Task -> Builder -> Verified Candidate -> Reviewer -> Human Gate
+```
+
+That is the shortest useful mental model. Security details such as leases, fencing, nonces and evidence integrity exist underneath these five concepts; you do not need to learn them before trying BAR.
+
 ## The problem BAR solves
 
 Coding agents are getting good at writing code. The dangerous part is not intelligence. It is **authority**.
@@ -80,7 +88,7 @@ flowchart LR
 
 **Builder and Reviewer can be different agents.** BAR owns the candidate identity and the evidence chain between them.
 
-The reference runtime intentionally performs **no real merge, deploy or release after authorization**. Any future side-effect adapter must be implemented separately and re-check protected authorization immediately before the effect.
+The reference runtime intentionally separates authorization from the system that performs a real merge, deploy or release. `bar authorize <action> --json` emits a machine-readable, exact-candidate authorization receipt for integration and re-checks the Human Gate immediately before handoff. The receipt is audit evidence, not a bearer token; the external adapter remains responsible for the final side effect. See [Protected-action handoff](docs/21-PROTECTED-ACTION-HANDOFF.md).
 
 ## Why this is different
 
@@ -99,7 +107,7 @@ Use the agent you already like. BAR focuses on the part agent frameworks should 
 - signed Ed25519 Human Gate with pinned approver identity and replay protection
 - bounded retries/model calls/wall time plus journal integrity checks
 - read-only MCP observation surface
-- Windows host-hardening scripts for role accounts, SID ACLs and real worker-token probes
+- optional Windows host-hardening scripts for role accounts, SID ACLs and real worker-token probes (the controller does not automatically launch local agents under those identities)
 
 ## Supported agents
 
@@ -111,6 +119,12 @@ Use the agent you already like. BAR focuses on the part agent frameworks should 
 | Docker | yes | yes | disposable, network-none |
 
 BAR deliberately avoids dangerous permission-bypass flags in its primary adapter defaults.
+
+### Maturity and deployment boundary
+
+BAR is an early open-source security runtime, not a certified enterprise security product. The core authority/evidence path is heavily tested, but production assurance still depends on the deployment host, chosen worker boundary and external side-effect adapter.
+
+Local Claude Code, Codex and OpenCode adapters are **process boundaries, not OS sandboxes**. Use the Docker adapter or an independently hardened host/runtime when stronger isolation is required.
 
 ## Run a real bounded task
 

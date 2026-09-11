@@ -67,6 +67,8 @@ test('approval succeeds for task whose only protected action is merge',()=>{
   const approved=run(['approve',signed.stdout.trim()],cwd,keys.env);
   assert.equal(approved.status,0,approved.stderr); assert.match(approved.stdout,/ACCEPTED_NO_REMOTE_MUTATION_EXECUTED/);
   const auth=run(['authorize-protected','merge'],cwd,keys.env); assert.equal(auth.status,0,auth.stderr); assert.match(auth.stdout,/PROTECTED_ACTION_AUTHORIZED merge/);
+  const receiptRun=run(['authorize-protected','merge','--json'],cwd,keys.env); assert.equal(receiptRun.status,0,receiptRun.stderr);
+  const receipt=JSON.parse(receiptRun.stdout); assert.equal(receipt.schema_version,'bar.authorization-receipt.v1'); assert.equal(receipt.action,'merge'); assert.equal(receipt.candidate_sha.length,40); assert.equal(receipt.tree_hash.length,40); assert.ok(receipt.signed_payload_hash);
 });
 
 test('approval key substitution fails fingerprint pinning',()=>{
