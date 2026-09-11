@@ -47,7 +47,9 @@ The worker-access probe must show that Builder and Reviewer cannot read controll
 
 ## 6. Attach tools carefully
 
-Run real Builder and Reviewer adapters under separate worker identities. Do not copy controller, GitHub, cloud, Human Gate or deployment credentials into worker profiles or environments.
+The installer and probe scripts harden and verify Windows role-account boundaries, but the current BAR controller does **not** automatically launch local Claude Code, Codex or OpenCode adapters under those identities. Treat this as optional host-hardening infrastructure, not as an automatic isolation guarantee.
+
+If you integrate workers under separate identities yourself, do not copy controller, GitHub, cloud, Human Gate or deployment credentials into worker profiles or environments.
 
 ## 7. Keep external mutation gated
 

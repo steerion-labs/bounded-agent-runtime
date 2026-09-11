@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -60,6 +61,34 @@ test('bar quickstart reaches Human Gate without architecture knowledge',()=>{
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-quickstart-cli-'));
   const result=run(['quickstart'],cwd,{...process.env,BOUNDED_AGENT_RUNTIME_ROOT:path.join(cwd,'unused')});
   assert.equal(result.status,0,result.stderr); assert.match(result.stdout,/4\/4 PASS: HUMAN_GATE_REQUIRED/); assert.match(result.stdout,/stopped before any protected remote action/i);
+});
+
+test('bar quickstart works when TEMP and TMP are absent',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-quickstart-no-env-'));
+  const env={...process.env,BOUNDED_AGENT_RUNTIME_ROOT:path.join(cwd,'unused')}; delete env.TEMP; delete env.TMP; delete env.TMPDIR;
+  const result=run(['quickstart'],cwd,env);
+  assert.equal(result.status,0,result.stderr); assert.match(result.stdout,/4\/4 PASS: HUMAN_GATE_REQUIRED/);
+});
+
+test('bar quickstart falls back when configured temp path is unusable',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-quickstart-bad-temp-')); const blocker=path.join(cwd,'not-a-dir'); fs.writeFileSync(blocker,'x');
+  const bad=path.join(blocker,'child'); const env={...process.env,TEMP:bad,TMP:bad,TMPDIR:bad,BOUNDED_AGENT_RUNTIME_ROOT:path.join(cwd,'unused')};
+  const result=run(['quickstart'],cwd,env); assert.equal(result.status,0,result.stderr); assert.match(result.stdout,/4\/4 PASS: HUMAN_GATE_REQUIRED/);
+});
+
+test('authorize accepts --json before action and returns JSON denial only',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-authorize-order-')); const env={...process.env,BOUNDED_AGENT_RUNTIME_ROOT:path.join(cwd,'runtime')};
+  const result=run(['authorize','--json','merge'],cwd,env); assert.equal(result.status,2); const body=JSON.parse(result.stdout); assert.equal(body.status,'DENIED'); assert.equal(body.retryable,false); assert.equal(body.requested_action,'merge'); assert.equal(body.reason_code,'RUNTIME_NOT_INITIALIZED'); assert.equal(result.stderr.trim(),'');
+  const missing=run(['authorize','--json'],cwd,env); assert.equal(missing.status,2); const missingBody=JSON.parse(missing.stdout); assert.equal(missingBody.status,'DENIED'); assert.equal(missingBody.retryable,false); assert.deepEqual(Object.keys(missingBody).sort(),Object.keys(body).sort());
+});
+
+test('receipt verify returns structured INVALID JSON on signature failure',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-receipt-invalid-'));
+  const {publicKey}=crypto.generateKeyPairSync('ed25519'); const publicPem=publicKey.export({type:'spki',format:'pem'});
+  const pub=path.join(cwd,'public.pem'); fs.writeFileSync(pub,publicPem);
+  const receipt=path.join(cwd,'receipt.json'); fs.writeFileSync(receipt,JSON.stringify({schema_version:'bar.authorization-receipt.v3',receipt_id:'x',requested_action:'merge',controller_key_fingerprint:'bad',controller_signature:'AAAA'}));
+  const result=run(['receipt','verify',receipt,'--pubkey',pub,'--json'],cwd); assert.equal(result.status,2); assert.equal(result.stderr.trim(),'');
+  const body=JSON.parse(result.stdout); assert.equal(body.schema_version,'bar.receipt-verification.v1'); assert.equal(body.status,'INVALID'); assert.match(body.reason_code,/AUTHORIZATION_RECEIPT_/);
 });
 
 test('bar status explains next safe step when uninitialized',()=>{

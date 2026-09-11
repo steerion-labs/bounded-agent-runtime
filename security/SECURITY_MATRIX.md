@@ -14,13 +14,14 @@
 | BAR-SEC-010 | P1 | Linux/Windows host-isolation claims are evidence-based only | host verification evidence | EVIDENCE_REQUIRED |
 | BAR-SEC-011 | P1 | Dependency/secret/supply-chain baseline | deterministic local scans | EVIDENCE_REQUIRED |
 | BAR-SEC-012 | P1 | Cloud engineering PASS is bound to an exact clean candidate and cannot stand in for host-security proof | clean-head SHA/tree proof + negative dirty/drift checks | IN_PROGRESS |
+| BAR-SEC-013 | P1 | Adversarial Unicode/obfuscation in untrusted intent or policy identifiers cannot widen authority | clean-room adversarial intent/identifier invariance tests | EVIDENCE_REQUIRED |
 
 ## Active backlog
 1. Complete PR #19 cloud-parity evidence against an exact clean candidate; no automatic Actions are required.
 2. Land and verify adapter-version diagnostics for issue #7 without granting project authority during probes.
 3. Land and verify read-only dashboard evidence timeline for issue #8 with untrusted evidence escaping.
 4. Preserve the governance rule that technical PASS never substitutes for Human Gate where required.
-5. Extend adversarial coverage for stale leases, forged transitions, credential inheritance, path/IPC escape, recovery replay and payload substitution.
+5. Extend adversarial coverage for stale leases, forged transitions, credential inheritance, path/IPC escape, recovery replay, payload substitution and Unicode/obfuscation authority invariance.
 6. Add a deterministic dependency/secret/supply-chain baseline without uploading repository contents to third parties by default.
 
 Status values describe repository evidence state, not absolute security. A status may only move to PASS when exact-head evidence is recorded and remains valid for the current candidate.
