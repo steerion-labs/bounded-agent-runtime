@@ -27,7 +27,7 @@ Evaluate Prime Agent as a long-running Builder/Reviewer harness behind BAR. Prim
 - `git diff --check`: invoked in the same local test slice; no code mutation was produced by the test
 
 ## Upstream Windows install smoke
-- YOGADUET Node: `v22.23.2`, satisfying Prime Agent `>=22.8.0`
+- Windows test host Node: `v22.23.2`, satisfying Prime Agent `>=22.8.0`
 - Git Bash available
 - exact upstream commit checkout succeeded
 - first `npm ci` was interrupted; second run in the dirty checkout failed `ENOTEMPTY` under `node_modules/openai/realtime`
