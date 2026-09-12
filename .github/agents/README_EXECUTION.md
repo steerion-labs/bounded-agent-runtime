@@ -1,1 +1,0 @@
-GitHub recognizes the `.agent.md` files in this directory as custom Copilot agent profiles. The Markdown body is the agent's runtime instruction set; YAML frontmatter defines its name, target and tool permissions.
