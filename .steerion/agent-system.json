@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "runtimeVersion": "1.0.0",
+  "projectId": "bar",
+  "repo": "steerion-labs/bounded-agent-runtime",
+  "maxMinutes": 10,
+  "authority": {
+    "productiveActions": false,
+    "externalCommunication": false,
+    "automaticGo": false,
+    "secretsInMemory": false
+  },
+  "knowledgeFiles": [
+    "AGENTS.md",
+    "README.md"
+  ],
+  "checks": [
+    {
+      "id": "git-diff-check",
+      "command": "git diff --check",
+      "stopOnFail": true
+    },
+    {
+      "id": "npm-test",
+      "command": "npm run test",
+      "stopOnFail": true
+    }
+  ],
+  "defaultChecks": [
+    "git-diff-check"
+  ],
+  "agents": [
+    {
+      "id": "orchestrator",
+      "title": "orchestrator",
+      "scope": null,
+      "departmentId": null,
+      "role": "orchestrator",
+      "executable": true,
+      "authority": "read-test",
+      "requiresIndependentVerification": false,
+      "source": "generated",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    },
+    {
+      "id": "builder",
+      "title": "builder",
+      "scope": null,
+      "departmentId": null,
+      "role": "builder",
+      "executable": true,
+      "authority": "bounded-write",
+      "requiresIndependentVerification": true,
+      "source": "generated",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    },
+    {
+      "id": "reviewer",
+      "title": "reviewer",
+      "scope": null,
+      "departmentId": null,
+      "role": "reviewer",
+      "executable": true,
+      "authority": "read-test",
+      "requiresIndependentVerification": false,
+      "source": "generated",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    },
+    {
+      "id": "qa",
+      "title": "qa",
+      "scope": null,
+      "departmentId": null,
+      "role": "qa",
+      "executable": true,
+      "authority": "read-test",
+      "requiresIndependentVerification": false,
+      "source": "generated",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    },
+    {
+      "id": "domain-specialist",
+      "title": "domain-specialist",
+      "scope": null,
+      "departmentId": null,
+      "role": "specialist",
+      "executable": true,
+      "authority": "read-test",
+      "requiresIndependentVerification": false,
+      "source": "generated",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    }
+  ],
+  "githubProfiles": [
+    {
+      "agentId": "orchestrator",
+      "path": ".github/agents/orchestrator.agent.md"
+    },
+    {
+      "agentId": "builder",
+      "path": ".github/agents/builder.agent.md"
+    },
+    {
+      "agentId": "reviewer",
+      "path": ".github/agents/reviewer.agent.md"
+    },
+    {
+      "agentId": "qa",
+      "path": ".github/agents/qa.agent.md"
+    },
+    {
+      "agentId": "domain-specialist",
+      "path": ".github/agents/domain-specialist.agent.md"
+    }
+  ],
+  "requiredLessonIds": [
+    "bar-rl-bootstrap"
+  ]
+}
