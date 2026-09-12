@@ -2,7 +2,7 @@
 name: BAR Security Reviewer
 description: Performs independent read-only review of BAR authority boundaries, fencing, recovery, credential isolation and exact-head evidence
 target: github-copilot
-tools: [read, search, execute]
+tools: [read, search, execute, github/*]
 disable-model-invocation: true
 user-invocable: true
 metadata:
