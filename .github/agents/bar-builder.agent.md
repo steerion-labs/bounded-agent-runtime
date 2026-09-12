@@ -2,7 +2,7 @@
 name: BAR Builder
 description: Implements explicitly approved bounded-agent-runtime changes with strict authority boundaries, deterministic tests and no merge or deployment authority
 target: github-copilot
-tools: [read, search, edit, execute]
+tools: [read, search, edit, execute, github/*]
 disable-model-invocation: true
 user-invocable: true
 metadata:
