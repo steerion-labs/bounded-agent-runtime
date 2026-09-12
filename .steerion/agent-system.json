@@ -104,6 +104,66 @@
         "git-diff-check",
         "npm-test"
       ]
+    },
+    {
+      "id": "bar-builder",
+      "title": "BAR Builder",
+      "scope": "Implement explicitly approved BAR changes while preserving authority boundaries and deterministic verification.",
+      "departmentId": null,
+      "role": "builder",
+      "executable": true,
+      "authority": "bounded-write",
+      "requiresIndependentVerification": true,
+      "source": ".github/agents/bar-builder.agent.md",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    },
+    {
+      "id": "bar-orchestrator",
+      "title": "BAR Orchestrator",
+      "scope": "Coordinate bounded BAR work without merge, deployment or automatic GO authority.",
+      "departmentId": null,
+      "role": "orchestrator",
+      "executable": true,
+      "authority": "read-test",
+      "requiresIndependentVerification": false,
+      "source": ".github/agents/bar-orchestrator.agent.md",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    },
+    {
+      "id": "bar-review-orchestrator",
+      "title": "BAR Review Orchestrator",
+      "scope": "Coordinate independent review evidence for BAR changes and release-readiness claims.",
+      "departmentId": null,
+      "role": "reviewer",
+      "executable": true,
+      "authority": "read-test",
+      "requiresIndependentVerification": false,
+      "source": ".github/agents/bar-review-orchestrator.agent.md",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    },
+    {
+      "id": "bar-security-reviewer",
+      "title": "BAR Security Reviewer",
+      "scope": "Review BAR changes against authority, credential, fencing, recovery and fail-closed security boundaries.",
+      "departmentId": null,
+      "role": "reviewer",
+      "executable": true,
+      "authority": "read-test",
+      "requiresIndependentVerification": false,
+      "source": ".github/agents/bar-security-reviewer.agent.md",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
     }
   ],
   "githubProfiles": [
@@ -126,6 +186,22 @@
     {
       "agentId": "domain-specialist",
       "path": ".github/agents/domain-specialist.agent.md"
+    },
+    {
+      "agentId": "bar-builder",
+      "path": ".github/agents/bar-builder.agent.md"
+    },
+    {
+      "agentId": "bar-orchestrator",
+      "path": ".github/agents/bar-orchestrator.agent.md"
+    },
+    {
+      "agentId": "bar-review-orchestrator",
+      "path": ".github/agents/bar-review-orchestrator.agent.md"
+    },
+    {
+      "agentId": "bar-security-reviewer",
+      "path": ".github/agents/bar-security-reviewer.agent.md"
     }
   ],
   "requiredLessonIds": [
