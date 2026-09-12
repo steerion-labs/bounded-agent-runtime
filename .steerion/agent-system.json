@@ -30,26 +30,181 @@
     "git-diff-check"
   ],
   "agents": [
-    {"id":"orchestrator","title":"orchestrator","scope":null,"departmentId":null,"role":"orchestrator","executable":true,"authority":"read-test","requiresIndependentVerification":false,"source":"generated","checks":["git-diff-check","npm-test"]},
-    {"id":"builder","title":"builder","scope":null,"departmentId":null,"role":"builder","executable":true,"authority":"bounded-write","requiresIndependentVerification":true,"source":"generated","checks":["git-diff-check","npm-test"]},
-    {"id":"reviewer","title":"reviewer","scope":null,"departmentId":null,"role":"reviewer","executable":true,"authority":"read-test","requiresIndependentVerification":false,"source":"generated","checks":["git-diff-check","npm-test"]},
-    {"id":"qa","title":"qa","scope":null,"departmentId":null,"role":"qa","executable":true,"authority":"read-test","requiresIndependentVerification":false,"source":"generated","checks":["git-diff-check","npm-test"]},
-    {"id":"domain-specialist","title":"domain-specialist","scope":null,"departmentId":null,"role":"specialist","executable":true,"authority":"read-test","requiresIndependentVerification":false,"source":"generated","checks":["git-diff-check","npm-test"]},
-    {"id":"bar-builder","title":"BAR Builder","scope":"Implement explicitly approved BAR changes while preserving authority boundaries and deterministic verification.","departmentId":null,"role":"builder","executable":true,"authority":"bounded-write","requiresIndependentVerification":true,"source":".github/agents/bar-builder.agent.md","checks":["git-diff-check","npm-test"]},
-    {"id":"bar-orchestrator","title":"BAR Orchestrator","scope":"Coordinate bounded BAR work without merge, deployment or automatic GO authority.","departmentId":null,"role":"orchestrator","executable":true,"authority":"read-test","requiresIndependentVerification":false,"source":".github/agents/bar-orchestrator.agent.md","checks":["git-diff-check","npm-test"]},
-    {"id":"bar-review-orchestrator","title":"BAR Review Orchestrator","scope":"Coordinate independent review evidence for BAR changes and release-readiness claims.","departmentId":null,"role":"reviewer","executable":true,"authority":"read-test","requiresIndependentVerification":false,"source":".github/agents/bar-review-orchestrator.agent.md","checks":["git-diff-check","npm-test"]},
-    {"id":"bar-security-reviewer","title":"BAR Security Reviewer","scope":"Review BAR changes against authority, credential, fencing, recovery and fail-closed security boundaries.","departmentId":null,"role":"reviewer","executable":true,"authority":"read-test","requiresIndependentVerification":false,"source":".github/agents/bar-security-reviewer.agent.md","checks":["git-diff-check","npm-test"]}
+    {
+      "id": "orchestrator",
+      "title": "orchestrator",
+      "scope": null,
+      "departmentId": null,
+      "role": "orchestrator",
+      "executable": true,
+      "authority": "read-test",
+      "requiresIndependentVerification": false,
+      "source": "generated",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    },
+    {
+      "id": "builder",
+      "title": "builder",
+      "scope": null,
+      "departmentId": null,
+      "role": "builder",
+      "executable": true,
+      "authority": "bounded-write",
+      "requiresIndependentVerification": true,
+      "source": "generated",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    },
+    {
+      "id": "reviewer",
+      "title": "reviewer",
+      "scope": null,
+      "departmentId": null,
+      "role": "reviewer",
+      "executable": true,
+      "authority": "read-test",
+      "requiresIndependentVerification": false,
+      "source": "generated",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    },
+    {
+      "id": "qa",
+      "title": "qa",
+      "scope": null,
+      "departmentId": null,
+      "role": "qa",
+      "executable": true,
+      "authority": "read-test",
+      "requiresIndependentVerification": false,
+      "source": "generated",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    },
+    {
+      "id": "domain-specialist",
+      "title": "domain-specialist",
+      "scope": null,
+      "departmentId": null,
+      "role": "specialist",
+      "executable": true,
+      "authority": "read-test",
+      "requiresIndependentVerification": false,
+      "source": "generated",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    },
+    {
+      "id": "bar-builder",
+      "title": "BAR Builder",
+      "scope": "Implement explicitly approved BAR changes while preserving authority boundaries and deterministic verification.",
+      "departmentId": null,
+      "role": "builder",
+      "executable": true,
+      "authority": "bounded-write",
+      "requiresIndependentVerification": true,
+      "source": ".github/agents/bar-builder.agent.md",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    },
+    {
+      "id": "bar-orchestrator",
+      "title": "BAR Orchestrator",
+      "scope": "Coordinate bounded BAR work without merge, deployment or automatic GO authority.",
+      "departmentId": null,
+      "role": "orchestrator",
+      "executable": true,
+      "authority": "read-test",
+      "requiresIndependentVerification": false,
+      "source": ".github/agents/bar-orchestrator.agent.md",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    },
+    {
+      "id": "bar-review-orchestrator",
+      "title": "BAR Review Orchestrator",
+      "scope": "Coordinate independent review evidence for BAR changes and release-readiness claims.",
+      "departmentId": null,
+      "role": "reviewer",
+      "executable": true,
+      "authority": "read-test",
+      "requiresIndependentVerification": false,
+      "source": ".github/agents/bar-review-orchestrator.agent.md",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    },
+    {
+      "id": "bar-security-reviewer",
+      "title": "BAR Security Reviewer",
+      "scope": "Review BAR changes against authority, credential, fencing, recovery and fail-closed security boundaries.",
+      "departmentId": null,
+      "role": "reviewer",
+      "executable": true,
+      "authority": "read-test",
+      "requiresIndependentVerification": false,
+      "source": ".github/agents/bar-security-reviewer.agent.md",
+      "checks": [
+        "git-diff-check",
+        "npm-test"
+      ]
+    }
   ],
   "githubProfiles": [
-    {"agentId":"orchestrator","path":".github/agents/orchestrator.agent.md"},
-    {"agentId":"builder","path":".github/agents/builder.agent.md"},
-    {"agentId":"reviewer","path":".github/agents/reviewer.agent.md"},
-    {"agentId":"qa","path":".github/agents/qa.agent.md"},
-    {"agentId":"domain-specialist","path":".github/agents/domain-specialist.agent.md"},
-    {"agentId":"bar-builder","path":".github/agents/bar-builder.agent.md"},
-    {"agentId":"bar-orchestrator","path":".github/agents/bar-orchestrator.agent.md"},
-    {"agentId":"bar-review-orchestrator","path":".github/agents/bar-review-orchestrator.agent.md"},
-    {"agentId":"bar-security-reviewer","path":".github/agents/bar-security-reviewer.agent.md"}
+    {
+      "agentId": "orchestrator",
+      "path": ".github/agents/orchestrator.agent.md"
+    },
+    {
+      "agentId": "builder",
+      "path": ".github/agents/builder.agent.md"
+    },
+    {
+      "agentId": "reviewer",
+      "path": ".github/agents/reviewer.agent.md"
+    },
+    {
+      "agentId": "qa",
+      "path": ".github/agents/qa.agent.md"
+    },
+    {
+      "agentId": "domain-specialist",
+      "path": ".github/agents/domain-specialist.agent.md"
+    },
+    {
+      "agentId": "bar-builder",
+      "path": ".github/agents/bar-builder.agent.md"
+    },
+    {
+      "agentId": "bar-orchestrator",
+      "path": ".github/agents/bar-orchestrator.agent.md"
+    },
+    {
+      "agentId": "bar-review-orchestrator",
+      "path": ".github/agents/bar-review-orchestrator.agent.md"
+    },
+    {
+      "agentId": "bar-security-reviewer",
+      "path": ".github/agents/bar-security-reviewer.agent.md"
+    }
   ],
-  "requiredLessonIds": ["bar-rl-bootstrap"]
+  "requiredLessonIds": [
+    "bar-rl-bootstrap"
+  ]
 }
