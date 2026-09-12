@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "bar-rl-bootstrap",
+      "status": "VERIFIED",
+      "severity": "P1",
+      "tags": [
+        "agent-runtime",
+        "reinforcement-learning",
+        "memory"
+      ],
+      "symptom": "Project roles can degrade into static prompt files with no executable learning loop.",
+      "rootCause": "Agent identity, runtime state, verification and durable lessons were not bound together.",
+      "rule": "Every project agent must be executable through the Steerion agent runtime, preload verified lessons, enforce a 10 minute ceiling and require independent verification for material builder outcomes.",
+      "evidence": [
+        "scripts/steerion-agent.mjs",
+        ".steerion/agent-system.json"
+      ],
+      "regression": "node scripts/steerion-agent.mjs check",
+      "sourceAgentId": "orchestrator",
+      "verifierAgentId": "reviewer",
+      "verifiedAt": "2026-09-12T12:00:56.133Z"
+    },
+    {
+      "id": "bar-rl-runtime-verified",
+      "status": "VERIFIED",
+      "material": true,
+      "severity": "P1",
+      "tags": [
+        "agent-runtime",
+        "github-agents",
+        "reinforcement-learning"
+      ],
+      "symptom": "Static agent definitions can exist without executable runtime, GitHub discovery, independent verification, or persistent learning.",
+      "rootCause": "Agent profile, runtime, evidence, verifier, and memory were not previously bound as one contract.",
+      "rule": "Every repository agent must have a GitHub custom-agent profile and executable learning runtime; verified material outcomes require an independent verifier before durable learning.",
+      "evidence": [
+        ".steerion/bootstrap-evidence.json",
+        "node scripts/steerion-agent.mjs check",
+        ".github/agents/"
+      ],
+      "regression": "node scripts/steerion-agent.mjs check",
+      "sourceAgentId": "orchestrator",
+      "verifierAgentId": "reviewer",
+      "verifiedAt": "2026-09-12T11:44:34.849Z"
+    }
+  ]
+}
