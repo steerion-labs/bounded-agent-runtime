@@ -1,10 +1,6 @@
 import path from 'node:path';
 
-const FORBIDDEN_ENV_PATTERNS = [
-  /(^|_)(TOKEN|SECRET|PASSWORD|API_KEY)$/i,
-  /^(GH|GITHUB|OPENAI|ANTHROPIC|NVIDIA|GOOGLE|GEMINI|AWS|AZURE|SUPABASE|KRAKEN|BINANCE)_/i,
-  /^PRIME_/i
-];
+const ALLOWED_ENV_KEYS = new Set(['PATH','Path','SystemRoot','SYSTEMROOT','WINDIR','ComSpec','COMSPEC','PATHEXT','TEMP','TMP','TMPDIR','LANG','LC_ALL']);
 
 export function assertPrimeAgentPocAllowed(task, role) {
   const config = task?.workers?.[role];
@@ -24,7 +20,7 @@ export function assertPrimeAgentPocAllowed(task, role) {
 export function primeAgentPocEnv(baseEnv, workspace) {
   const env = {};
   for (const [key, value] of Object.entries(baseEnv ?? {})) {
-    if (FORBIDDEN_ENV_PATTERNS.some(pattern => pattern.test(key))) continue;
+    if (!ALLOWED_ENV_KEYS.has(key)) continue;
     env[key] = value;
   }
   const isolatedHome = path.join(workspace, '.bar-prime-home');

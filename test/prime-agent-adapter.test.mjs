@@ -56,10 +56,17 @@ test('Prime Agent reviewer must be read-only', () => {
 test('Prime Agent POC environment strips credential-bearing variables and isolates HOME', () => {
   const env = primeAgentPocEnv({
     PATH: '/bin', GH_TOKEN: 'secret', GITHUB_TOKEN: 'secret',
-    OPENAI_API_KEY: 'secret', ANTHROPIC_API_KEY: 'secret', SAFE_VALUE: 'ok'
+    OPENAI_API_KEY: 'secret', ANTHROPIC_API_KEY: 'secret', SAFE_VALUE: 'no',
+    GIT_ASKPASS: 'steal', SSH_AUTH_SOCK: 'agent', NPM_TOKEN: 'secret',
+    GCM_INTERACTIVE: 'Always', GIT_CONFIG_GLOBAL: '/secret/config'
   }, '/worktree');
   assert.equal(env.PATH, '/bin');
-  assert.equal(env.SAFE_VALUE, 'ok');
+  assert.equal(env.SAFE_VALUE, undefined);
+  assert.equal(env.GIT_ASKPASS, undefined);
+  assert.equal(env.SSH_AUTH_SOCK, undefined);
+  assert.equal(env.NPM_TOKEN, undefined);
+  assert.equal(env.GCM_INTERACTIVE, undefined);
+  assert.equal(env.GIT_CONFIG_GLOBAL, undefined);
   assert.equal(env.GH_TOKEN, undefined);
   assert.equal(env.GITHUB_TOKEN, undefined);
   assert.equal(env.OPENAI_API_KEY, undefined);
