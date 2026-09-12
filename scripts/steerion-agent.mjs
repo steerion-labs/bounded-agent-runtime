@@ -135,5 +135,3 @@ if (command === 'list') {
 } else {
   throw new Error('commands: list | context | run | verify | learn | check | status');
 }
-
-
