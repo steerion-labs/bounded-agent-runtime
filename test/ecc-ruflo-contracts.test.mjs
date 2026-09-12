@@ -69,3 +69,13 @@ test('Ruflo advisory memory rejects nested authority claims and prompt stuffing 
   assert.throws(() => ingestAdvisoryMemory([{ content:'12345' }], { max_content_chars:4 }), /CONTENT_BUDGET_EXCEEDED/);
   assert.throws(() => ingestAdvisoryMemory([{ content:'a' },{ content:'b' }], { max_entries:1 }), /BUDGET_EXCEEDED/);
 });
+
+test('advisory context revalidates direct objects and strips mutation channels', () => {
+  const valid = { memory_id:'m1', content:'context', source:'test', trust:'UNTRUSTED_CONTEXT', authority:'NONE', evidence_value:'NONE', may_satisfy_gate:false, may_grant_permission:false };
+  const context = buildAdvisoryContext([valid]);
+  valid.content = 'mutated after build';
+  assert.equal(context.items[0].content, 'context');
+  assert.throws(() => buildAdvisoryContext([{ ...valid, evidence_value:'VERIFIED' }]), /TRUST_CONTRACT_REQUIRED/);
+  assert.throws(() => buildAdvisoryContext([{ ...valid, may_grant_permission:true }]), /TRUST_CONTRACT_REQUIRED/);
+  assert.throws(() => buildAdvisoryContext([{ ...valid, may_merge:true }]), /CONTEXT_FIELD_FORBIDDEN/);
+});
