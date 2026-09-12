@@ -2,7 +2,7 @@
 name: BAR Review Orchestrator
 description: Coordinates exact-head BAR review by delegating security and implementation tasks while preserving the Human Gate
 target: github-copilot
-tools: [read, search, agent]
+tools: [read, search, agent, github/*]
 disable-model-invocation: true
 user-invocable: true
 metadata:

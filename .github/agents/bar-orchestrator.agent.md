@@ -2,7 +2,7 @@
 name: BAR Orchestrator
 description: Coordinates bounded-agent-runtime engineering across authority boundaries, recovery, evidence and human gates without merge or deployment authority
 target: github-copilot
-tools: [read, search, agent]
+tools: [read, search, agent, github/*]
 disable-model-invocation: true
 user-invocable: true
 metadata:
