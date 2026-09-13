@@ -363,3 +363,23 @@ test('controller lock serializes concurrent controllers and allows dead-owner ta
   holder.kill(); await new Promise(resolve=>holder.once('exit',resolve));
   const takeover=run(['recover'],cwd,env); assert.equal(takeover.status,0,takeover.stderr); assert.match(takeover.stdout,/SAFE_RESUME/);
 });
+
+
+test('journal integrity key rejects malformed persisted key',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-integrity-key-invalid-'));
+  const root=rootFor(cwd); const secrets=path.join(root,'secrets'); fs.mkdirSync(secrets,{recursive:true});
+  fs.writeFileSync(path.join(secrets,'journal-hmac.key'),'not-a-valid-key\n','utf8');
+  const code="import {verifyJournal} from './runtime/core.mjs'; verifyJournal();";
+  const result=spawnSync(process.execPath,['--input-type=module','-e',code],{cwd:repo,encoding:'utf8',env:baseEnv(cwd)});
+  assert.notEqual(result.status,0); assert.match(result.stderr,/INTEGRITY_KEY_INVALID/);
+});
+
+test('concurrent first journal verification converges on one valid integrity key',async()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-integrity-key-race-'));
+  const code="import {verifyJournal} from './runtime/core.mjs'; verifyJournal();";
+  const runOne=()=>new Promise(resolve=>{ const child=spawn(process.execPath,['--input-type=module','-e',code],{cwd:repo,env:baseEnv(cwd),stdio:['ignore','pipe','pipe']}); let stderr=''; child.stderr.on('data',chunk=>stderr+=chunk); child.on('close',status=>resolve({status,stderr})); });
+  const results=await Promise.all(Array.from({length:12},runOne));
+  for (const result of results) assert.equal(result.status,0,result.stderr);
+  const encoded=fs.readFileSync(path.join(rootFor(cwd),'secrets','journal-hmac.key'),'utf8').trim();
+  assert.match(encoded,/^[a-f0-9]{64}$/i);
+});
