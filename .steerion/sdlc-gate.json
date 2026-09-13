@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "policyId": "steerion-sdlc-gate-v1",
+  "projectId": "bar",
+  "repo": "steerion-labs/bounded-agent-runtime",
+  "baseBranch": "main",
+  "profile": "security-critical-runtime",
+  "authority": {
+    "automaticMerge": false,
+    "automaticDeploy": false,
+    "productiveActions": false,
+    "externalCommunication": false,
+    "externalSpend": false,
+    "humanGateRequired": true
+  },
+  "requiredEvidence": {
+    "exactHeadRequired": true,
+    "changedFilesRequired": true,
+    "existingCiMustPass": true,
+    "independentReviewRequired": true,
+    "useAgentSystemChecksWhenPresent": true
+  },
+  "externalAgentApps": {
+    "installAutomatically": false,
+    "mayBeSoleReleaseEvidence": false,
+    "requiresHumanApprovalForInstallOrNewSpend": true
+  },
+  "requiredCommands": ["git diff --check", "npm run test"],
+  "preferredReviewers": ["bar-security-reviewer", "bar-review-orchestrator"],
+  "optionalExternalEvidence": ["endor-labs", "sonarqube"],
+  "deferredEvaluation": [],
+  "rules": [
+    "Authority, credential isolation, fencing, recovery and fail-closed behavior are release-blocking.",
+    "Agent verdicts never replace deterministic adversarial evidence.",
+    "No automatic merge or productive deployment."
+  ]
+}
