@@ -53,8 +53,12 @@ test('Hermes environment strips inherited credentials and isolates HOME', () => 
   assert.equal(env.HERMES_WRITE_SAFE_ROOT, '/workspace/task');
   assert.equal(env.TERMINAL_ENV, 'docker');
   assert.equal(env.TERMINAL_DOCKER_NETWORK, 'false');
+  assert.equal(env.TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE, 'true');
+  assert.equal(env.TERMINAL_DOCKER_RUN_AS_HOST_USER, 'true');
   assert.equal(env.TERMINAL_DOCKER_FORWARD_ENV, '[]');
   assert.equal(env.TERMINAL_CONTAINER_PERSISTENT, 'false');
+  assert.equal(env.TERMINAL_DOCKER_PERSIST_ACROSS_PROCESSES, 'false');
+  assert.equal(env.TERMINAL_PERSISTENT_SHELL, 'false');
   for (const key of ['GITHUB_TOKEN','GH_TOKEN','OPENAI_API_KEY','ANTHROPIC_API_KEY','NVIDIA_API_KEY','COPILOT_GITHUB_TOKEN','AWS_SECRET_ACCESS_KEY','RANDOM_SAFE_VALUE']) {
     assert.equal(key in env, false, `${key} must not pass into Hermes`);
   }
