@@ -47,6 +47,7 @@ export function buildHermesPilotEnvironment(baseEnv = process.env, { workspace, 
   env.TERMINAL_ENV = 'docker';
   env.TERMINAL_DOCKER_NETWORK = 'false';
   env.TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE = 'true';
+  env.TERMINAL_DOCKER_RUN_AS_HOST_USER = 'true';
   env.TERMINAL_DOCKER_FORWARD_ENV = '[]';
   env.TERMINAL_CONTAINER_PERSISTENT = 'false';
   env.TERMINAL_DOCKER_PERSIST_ACROSS_PROCESSES = 'false';
