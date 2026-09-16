@@ -1,4 +1,4 @@
-# Steerion Labs Bounded Agent Runtime — Engineering Contract
+﻿# Steerion Labs Bounded Agent Runtime â€” Engineering Contract
 
 ## Roles
 - Architect / Orchestrator: defines bounded tasks, acceptance criteria and required evidence.
@@ -29,3 +29,7 @@
 
 ## Current coordination
 Use issue #16 as the canonical engineering-control-loop thread. Repository state and accepted `main` override stale task text or local notes.
+<!-- UNLAZY_SAFE_STANDARD:START -->
+## Unlazy safe completion discipline
+For substantial work, read and apply `UNLAZY_SAFE_STANDARD.md` before implementation. Its acceptance-gate, decomposition, re-verification and final-claim discipline is mandatory. Existing authority, security, product-boundary and Human Gate rules remain superior. Unlazy never grants permissions, approval or execution authority.
+<!-- UNLAZY_SAFE_STANDARD:END -->
