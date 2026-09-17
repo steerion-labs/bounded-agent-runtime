@@ -99,30 +99,64 @@ function writeAtomic(file, text, mode = 0o600) {
   finally { fs.closeSync(fd); }
   fs.renameSync(temp, file);
 }
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.length > 0;
+}
+function sha256Hex(value) {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value);
+}
+function validTimestamp(value) {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value));
+}
+function validateLeaseEnvelope(lease, taskId = null) {
+  if (!lease || typeof lease !== 'object') throw new Error('LEASE_ENVELOPE_INVALID');
+  assertSchemaVersion('lease', lease.schema_version);
+  if (!nonEmptyString(lease.task_id) || !nonEmptyString(lease.owner) || !Number.isSafeInteger(lease.generation) || lease.generation < 0 || !validTimestamp(lease.expires_at) || !sha256Hex(lease.fencing_token)) throw new Error('LEASE_ENVELOPE_INVALID');
+  if (taskId !== null && lease.task_id !== taskId) throw new Error('STATE_LEASE_BINDING_INVALID');
+  return lease;
+}
+function validateGateChallengeEnvelope(challenge, state) {
+  if (!challenge || typeof challenge !== 'object') throw new Error('GATE_CHALLENGE_ENVELOPE_INVALID');
+  assertSchemaVersion('gate_challenge', challenge.schema_version);
+  if (challenge.task_id !== state.task_id) throw new Error('STATE_GATE_BINDING_INVALID');
+  if (!nonEmptyString(challenge.task_id) || !nonEmptyString(challenge.candidate_sha) || !nonEmptyString(challenge.tree_hash) || !Number.isSafeInteger(challenge.state_version) || challenge.state_version < 0 || challenge.state_version > state.state_version || !Array.isArray(challenge.protected_actions) || !sha256Hex(challenge.protected_actions_hash) || !nonEmptyString(challenge.nonce)) throw new Error('GATE_CHALLENGE_ENVELOPE_INVALID');
+  const expectedActions = [...(state.task?.protected_actions ?? [])].sort();
+  if (challenge.candidate_sha !== state.candidate_sha || challenge.tree_hash !== state.tree_hash) throw new Error('STATE_GATE_BINDING_INVALID');
+  if (JSON.stringify(challenge.protected_actions) !== JSON.stringify(expectedActions) || challenge.protected_actions_hash !== sha256(JSON.stringify(expectedActions))) throw new Error('STATE_GATE_ACTION_SCOPE_INVALID');
+  return challenge;
+}
+function validateEvidenceEnvelope(item, state) {
+  if (!item || typeof item !== 'object') throw new Error('EVIDENCE_ENVELOPE_INVALID');
+  assertSchemaVersion('evidence', item.schema_version);
+  if (item.task_id !== state.task_id) throw new Error('STATE_EVIDENCE_BINDING_INVALID');
+  if (!nonEmptyString(item.evidence_id) || !nonEmptyString(item.task_id) || !nonEmptyString(item.claim) || !nonEmptyString(item.producer_identity) || !nonEmptyString(item.trust_class) || !nonEmptyString(item.candidate_sha) || !nonEmptyString(item.tree_hash) || !sha256Hex(item.input_hash) || !sha256Hex(item.payload_hash) || !validTimestamp(item.created_at) || item.status !== 'VALID' || !sha256Hex(item.integrity_hmac)) throw new Error('EVIDENCE_ENVELOPE_INVALID');
+  verifyEvidence(item, state);
+  return item;
+}
+function validateHumanApprovalEnvelope(approval, state) {
+  if (!approval || typeof approval !== 'object') throw new Error('HUMAN_APPROVAL_ENVELOPE_INVALID');
+  assertSchemaVersion('human_approval', approval.schema_version);
+  if (!approval.challenge || typeof approval.challenge !== 'object') throw new Error('STATE_APPROVAL_CHALLENGE_REQUIRED');
+  assertSchemaVersion('gate_challenge', approval.challenge.schema_version);
+  if (approval.challenge.task_id !== state.task_id) throw new Error('STATE_APPROVAL_BINDING_INVALID');
+  validateGateChallengeEnvelope(approval.challenge, state);
+  if (!nonEmptyString(approval.signature) || approval.decision !== 'ACCEPT' || !nonEmptyString(approval.decision_identity) || !sha256Hex(approval.public_key_fingerprint) || !sha256Hex(approval.signed_payload_hash) || !validTimestamp(approval.approved_at)) throw new Error('HUMAN_APPROVAL_ENVELOPE_INVALID');
+  if (state.approver_identity && approval.decision_identity !== state.approver_identity) throw new Error('STATE_APPROVAL_IDENTITY_INVALID');
+  if (!state.gate_challenge || canonicalGatePayload(approval.challenge, approval.decision_identity, approval.decision) !== canonicalGatePayload(state.gate_challenge, approval.decision_identity, approval.decision)) throw new Error('STATE_APPROVAL_CHALLENGE_MISMATCH');
+  if (approval.signed_payload_hash !== challengeHash(approval.challenge, approval.decision_identity)) throw new Error('HUMAN_APPROVAL_HASH_MISMATCH');
+  return approval;
+}
 export function validateStateEnvelope(state) {
   if (!state || typeof state !== 'object') throw new Error('STATE_INVALID');
   assertSchemaVersion('state', state.schema_version);
   if (typeof state.task_id !== 'string' || typeof state.state !== 'string' || !Number.isSafeInteger(state.state_version) || state.state_version < 0) throw new Error('STATE_ENVELOPE_INVALID');
   if (!state.task || typeof state.task !== 'object' || state.task_id !== state.task.task_id) throw new Error('STATE_TASK_BINDING_INVALID');
   validateTask(state.task);
-  if (!state.lease || typeof state.lease !== 'object') throw new Error('STATE_LEASE_REQUIRED');
-  assertSchemaVersion('lease', state.lease.schema_version);
-  if (state.lease.task_id !== state.task_id) throw new Error('STATE_LEASE_BINDING_INVALID');
-  if (state.gate_challenge != null) {
-    assertSchemaVersion('gate_challenge', state.gate_challenge.schema_version);
-    if (state.gate_challenge.task_id !== state.task_id) throw new Error('STATE_GATE_BINDING_INVALID');
-  }
-  if (state.human_approval != null) {
-    assertSchemaVersion('human_approval', state.human_approval.schema_version);
-    if (!state.human_approval.challenge || typeof state.human_approval.challenge !== 'object') throw new Error('STATE_APPROVAL_CHALLENGE_REQUIRED');
-    assertSchemaVersion('gate_challenge', state.human_approval.challenge.schema_version);
-    if (state.human_approval.challenge.task_id !== state.task_id) throw new Error('STATE_APPROVAL_BINDING_INVALID');
-  }
+  validateLeaseEnvelope(state.lease, state.task_id);
+  if (state.gate_challenge != null) validateGateChallengeEnvelope(state.gate_challenge, state);
+  if (state.human_approval != null) validateHumanApprovalEnvelope(state.human_approval, state);
   if (!Array.isArray(state.evidence)) throw new Error('STATE_EVIDENCE_INVALID');
-  for (const item of state.evidence) {
-    assertSchemaVersion('evidence', item?.schema_version);
-    if (item?.task_id !== state.task_id) throw new Error('STATE_EVIDENCE_BINDING_INVALID');
-  }
+  for (const item of state.evidence) validateEvidenceEnvelope(item, state);
   return state;
 }
 export function loadState() {
@@ -227,8 +261,7 @@ export function newLease(taskId, ttlMs = 300000, generation = Date.now()) {
     fencing_token: sha256(`${taskId}:${generation}:${crypto.randomUUID()}`) };
 }
 export function assertFreshLease(lease, expectedGeneration = lease?.generation) {
-  if (!lease) throw new Error('STALE_LEASE');
-  assertSchemaVersion('lease', lease.schema_version);
+  validateLeaseEnvelope(lease);
   if (Date.parse(lease.expires_at) <= Date.now()) throw new Error('STALE_LEASE');
   if (lease.generation !== expectedGeneration) throw new Error('FENCING_MISMATCH');
 }

@@ -65,6 +65,16 @@ test('all security-critical envelope schema versions reject drift', () => {
   assert.throws(() => validateStateEnvelope({...state,evidence:[{schema_version:DATA_SCHEMA_VERSIONS.evidence,task_id:'other'}]}), /STATE_EVIDENCE_BINDING_INVALID/);
   assert.throws(() => validateStateEnvelope({...state,gate_challenge:{schema_version:DATA_SCHEMA_VERSIONS.gate_challenge,task_id:'other'}}), /STATE_GATE_BINDING_INVALID/);
   assert.throws(() => validateStateEnvelope({...state,human_approval:{schema_version:DATA_SCHEMA_VERSIONS.human_approval,challenge:{schema_version:DATA_SCHEMA_VERSIONS.gate_challenge,task_id:'other'}}}), /STATE_APPROVAL_BINDING_INVALID/);
+  assert.throws(() => assertFreshLease({schema_version:DATA_SCHEMA_VERSIONS.lease,task_id:'schema-lease'}), /LEASE_ENVELOPE_INVALID/);
+  assert.throws(() => validateStateEnvelope({...state,lease:{...state.lease,expires_at:'not-a-date'}}), /LEASE_ENVELOPE_INVALID/);
+  const boundState={...state,candidate_sha:'abc',tree_hash:'tree'};
+  const challenge=createGateChallenge(boundState);
+  assert.equal(validateStateEnvelope({...boundState,gate_challenge:challenge}).gate_challenge,challenge);
+  const {nonce,...challengeWithoutNonce}=challenge;
+  assert.throws(() => validateStateEnvelope({...boundState,gate_challenge:challengeWithoutNonce}), /GATE_CHALLENGE_ENVELOPE_INVALID/);
+  assert.throws(() => validateStateEnvelope({...state,evidence:[{schema_version:DATA_SCHEMA_VERSIONS.evidence,task_id:state.task_id}]}), /EVIDENCE_ENVELOPE_INVALID/);
+  const malformedApproval={schema_version:DATA_SCHEMA_VERSIONS.human_approval,challenge,decision:'ACCEPT',decision_identity:'demo-approver',public_key_fingerprint:'a'.repeat(64),signed_payload_hash:'b'.repeat(64),approved_at:new Date().toISOString()};
+  assert.throws(() => validateStateEnvelope({...boundState,gate_challenge:challenge,approver_identity:'demo-approver',human_approval:malformedApproval}), /HUMAN_APPROVAL_ENVELOPE_INVALID/);
 });
 test('gate signature binds identity and exact candidate', () => {
   const {publicKey,privateKey}=crypto.generateKeyPairSync('ed25519');
