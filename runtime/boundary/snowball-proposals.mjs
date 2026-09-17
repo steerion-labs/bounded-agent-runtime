@@ -1,7 +1,8 @@
-﻿import crypto from 'node:crypto';
+import crypto from 'node:crypto';
 
 const TYPES = new Set(['user_correction','repeated_failure','successful_pattern','capability_gap']);
 const FORBIDDEN_EFFECTS = Object.freeze(['self_modify','policy_write','skill_install','agent_install','schedule_create','credential_access','network_expand','auto_promote']);
+const REQUIRED_FLOW = Object.freeze(['INTAKE','SECURITY_REVIEW','SANDBOX_TEST','INDEPENDENT_REVIEW','HUMAN_PROMOTION_GATE']);
 
 function stableId(value) {
   return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 16);
@@ -34,7 +35,7 @@ export function createSnowballProposals(signals, { minimum_occurrences = 2 } = {
   return [...groups.values()]
     .filter(row => row.count >= minimum_occurrences || row.signal.type === 'capability_gap' || row.signal.type === 'user_correction')
     .map(row => Object.freeze({
-      proposal_id: stableId({ type: row.signal.type, capability_id: row.signal.capability_id, summary: row.signal.summary }),
+      proposal_id: stableId({ type: row.signal.type, capability_id: row.signal.capability_id, summary: row.signal.summary.toLowerCase() }),
       source: 'prime-agent-snowball-observation',
       type: row.signal.type,
       capability_id: row.signal.capability_id,
@@ -46,7 +47,7 @@ export function createSnowballProposals(signals, { minimum_occurrences = 2 } = {
       authority: 'NONE',
       auto_mutation_allowed: false,
       forbidden_effects: FORBIDDEN_EFFECTS,
-      required_flow: Object.freeze(['INTAKE','SECURITY_REVIEW','SANDBOX_TEST','INDEPENDENT_REVIEW','HUMAN_PROMOTION_GATE'])
+      required_flow: REQUIRED_FLOW
     }))
     .sort((a, b) => b.occurrences - a.occurrences || a.proposal_id.localeCompare(b.proposal_id));
 }
@@ -54,6 +55,6 @@ export function createSnowballProposals(signals, { minimum_occurrences = 2 } = {
 export function assertSnowballProposalSafe(proposal) {
   if (!proposal || proposal.status !== 'PROPOSED' || proposal.authority !== 'NONE' || proposal.auto_mutation_allowed !== false) throw new Error('SNOWBALL_PROPOSAL_UNSAFE');
   if (!Array.isArray(proposal.forbidden_effects) || !FORBIDDEN_EFFECTS.every(value => proposal.forbidden_effects.includes(value))) throw new Error('SNOWBALL_FORBIDDEN_EFFECTS_MISSING');
-  if (!Array.isArray(proposal.required_flow) || proposal.required_flow.at(-1) !== 'HUMAN_PROMOTION_GATE') throw new Error('SNOWBALL_HUMAN_GATE_REQUIRED');
+  if (!Array.isArray(proposal.required_flow) || proposal.required_flow.length !== REQUIRED_FLOW.length || !REQUIRED_FLOW.every((value, index) => proposal.required_flow[index] === value)) throw new Error('SNOWBALL_PROMOTION_FLOW_INVALID');
   return true;
 }

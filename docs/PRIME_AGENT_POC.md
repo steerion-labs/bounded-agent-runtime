@@ -9,7 +9,8 @@ License: MIT
 Evaluate Prime Agent as a long-running Builder/Reviewer harness behind BAR. Prime Agent is not a security sandbox and must never become the authorization boundary.
 
 ## Initial POC boundary
-- explicit adapter selection only; never auto-selected
+- contract-only registration; execution is fail-closed until BAR provides enforced network-none plus filesystem isolation
+- never auto-selected
 - `--no-session`
 - `--no-skills`
 - no schedules
@@ -35,7 +36,7 @@ Evaluate Prime Agent as a long-running Builder/Reviewer harness behind BAR. Prim
 - therefore NO Prime Agent runtime execution PASS is claimed yet
 
 ## Next gate
-Re-run the upstream source install in a clean disposable environment, then execute only `--help`/version smoke without login or model credentials. After that, run an intentionally harmless BAR-controlled fixture task and the negative attack suite before any credential or network capability is considered.
+Do not execute Prime Agent through BAR yet. First add an enforced network-none sandbox and a technically read-only reviewer filesystem boundary. Only after those properties are proven may runtime execution be enabled. Upstream install/version smoke remains non-authoritative research evidence.
 
 ## Safe Snowball proposal mode
 BAR may aggregate repeated failures, successful patterns, user corrections and capability gaps into reviewable Snowball proposals.

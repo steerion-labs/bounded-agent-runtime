@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSnowballProposals, assertSnowballProposalSafe } from '../runtime/boundary/snowball-proposals.mjs';
 
@@ -34,6 +34,13 @@ test('unsafe proposal mutation is rejected', () => {
   const [proposal]=createSnowballProposals([{type:'user_correction',summary:'x'}]);
   assert.throws(()=>assertSnowballProposalSafe({...proposal,auto_mutation_allowed:true}),/SNOWBALL_PROPOSAL_UNSAFE/);
   assert.throws(()=>assertSnowballProposalSafe({...proposal,forbidden_effects:[]}),/SNOWBALL_FORBIDDEN_EFFECTS_MISSING/);
+  assert.throws(()=>assertSnowballProposalSafe({...proposal,required_flow:['HUMAN_PROMOTION_GATE']}),/SNOWBALL_PROMOTION_FLOW_INVALID/);
+});
+
+test('proposal id is stable across signal ordering and summary casing', () => {
+  const a=createSnowballProposals([{type:'repeated_failure',task_id:'t1',capability_id:'code.modify',summary:'Launcher Timeout'},{type:'repeated_failure',task_id:'t2',capability_id:'code.modify',summary:'launcher timeout'}]);
+  const b=createSnowballProposals([{type:'repeated_failure',task_id:'t2',capability_id:'code.modify',summary:'launcher timeout'},{type:'repeated_failure',task_id:'t1',capability_id:'code.modify',summary:'Launcher Timeout'}]);
+  assert.equal(a[0].proposal_id,b[0].proposal_id);
 });
 
 test('invalid signal and threshold fail closed', () => {

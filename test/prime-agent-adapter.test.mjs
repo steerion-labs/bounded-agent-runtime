@@ -20,19 +20,17 @@ function task(overrides = {}) {
   };
 }
 
-test('Prime Agent is registered but never auto-selected', () => {
+test('Prime Agent is registered as contract-only and never executable or auto-selected', () => {
   const defs = adapterDefinitions();
   assert.equal(defs['prime-agent'].executable, 'prime-agent');
-  assert.match(defs['prime-agent'].boundary, /POC only/);
+  assert.deepEqual(defs['prime-agent'].roles, []);
+  assert.match(defs['prime-agent'].boundary, /execution disabled/);
 });
 
-test('Prime Agent invocation is ephemeral and skill-free', () => {
+test('Prime Agent invocation fails closed until technical isolation exists', () => {
   const t = task();
   assert.equal(assertPrimeAgentPocAllowed(t, 'builder'), true);
-  const call = buildAgentInvocation({ adapter: 'prime-agent', role: 'builder', task: t, workspace: '/tmp/work', prompt: 'do work' });
-  assert.equal(call.command, 'prime-agent');
-  assert.deepEqual(call.args.slice(0, 3), ['-p', '--no-session', '--no-skills']);
-  assert.equal(call.args.at(-1), 'do work');
+  assert.throws(() => buildAgentInvocation({ adapter: 'prime-agent', role: 'builder', task: t, workspace: '/tmp/work', prompt: 'do work' }), /PRIME_AGENT_EXECUTION_ISOLATION_REQUIRED/);
 });
 
 test('Prime Agent rejects authority-widening configuration', () => {

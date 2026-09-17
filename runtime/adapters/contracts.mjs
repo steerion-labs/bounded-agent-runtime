@@ -6,12 +6,7 @@ export function buildAgentInvocation({adapter,role,task,workspace,prompt,generic
     return {command:'claude',args:['-p','--safe-mode','--no-session-persistence','--output-format','text','--permission-mode',role==='builder'?'acceptEdits':'plan','--disable-slash-commands','--strict-mcp-config','--tools',tools,...(config.model?['--model',config.model]:[])],input:prompt};
   }
   if(adapter==='opencode') return {command:'opencode',args:['run','--pure','--dir',workspace,...(config.model?['--model',config.model]:[]),prompt]};
-  if(adapter==='prime-agent') {
-    return {
-      command:'prime-agent',
-      args:['-p','--no-session','--no-skills',...(config.model?['--model',config.model]:[]),prompt]
-    };
-  }
+  if(adapter==='prime-agent') throw new Error('PRIME_AGENT_EXECUTION_ISOLATION_REQUIRED');
   if(adapter==='ollama') {
     if(role!=='reviewer') throw new Error('ADAPTER_ROLE_UNSUPPORTED:ollama:builder');
     if(!config.model) throw new Error('OLLAMA_MODEL_REQUIRED');
