@@ -25,13 +25,33 @@
     "mayBeSoleReleaseEvidence": false,
     "requiresHumanApprovalForInstallOrNewSpend": true
   },
-  "requiredCommands": ["git diff --check", "npm run test"],
-  "preferredReviewers": ["bar-security-reviewer", "bar-review-orchestrator"],
-  "optionalExternalEvidence": ["endor-labs", "sonarqube"],
+  "requiredCommands": [
+    "git diff --check",
+    "npm run test"
+  ],
+  "preferredReviewers": [
+    "bar-security-reviewer",
+    "bar-review-orchestrator"
+  ],
+  "optionalExternalEvidence": [
+    "endor-labs",
+    "sonarqube"
+  ],
   "deferredEvaluation": [],
   "rules": [
     "Authority, credential isolation, fencing, recovery and fail-closed behavior are release-blocking.",
     "Agent verdicts never replace deterministic adversarial evidence.",
     "No automatic merge or productive deployment."
-  ]
+  ],
+  "policyIntegrity": {
+    "candidatePolicyAuthoritative": false,
+    "trustedPolicySource": "accepted-base",
+    "candidateMayWeakenBase": false,
+    "policyChangesRequireIndependentReview": true,
+    "policyChangesRequireHumanGate": true,
+    "bootstrapTrustFloor": [
+      "AGENTS.md",
+      "SECURITY.md"
+    ]
+  }
 }
