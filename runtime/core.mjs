@@ -108,10 +108,21 @@ export function validateStateEnvelope(state) {
   if (!state.lease || typeof state.lease !== 'object') throw new Error('STATE_LEASE_REQUIRED');
   assertSchemaVersion('lease', state.lease.schema_version);
   if (state.lease.task_id !== state.task_id) throw new Error('STATE_LEASE_BINDING_INVALID');
-  if (state.gate_challenge != null) assertSchemaVersion('gate_challenge', state.gate_challenge.schema_version);
-  if (state.human_approval != null) assertSchemaVersion('human_approval', state.human_approval.schema_version);
+  if (state.gate_challenge != null) {
+    assertSchemaVersion('gate_challenge', state.gate_challenge.schema_version);
+    if (state.gate_challenge.task_id !== state.task_id) throw new Error('STATE_GATE_BINDING_INVALID');
+  }
+  if (state.human_approval != null) {
+    assertSchemaVersion('human_approval', state.human_approval.schema_version);
+    if (!state.human_approval.challenge || typeof state.human_approval.challenge !== 'object') throw new Error('STATE_APPROVAL_CHALLENGE_REQUIRED');
+    assertSchemaVersion('gate_challenge', state.human_approval.challenge.schema_version);
+    if (state.human_approval.challenge.task_id !== state.task_id) throw new Error('STATE_APPROVAL_BINDING_INVALID');
+  }
   if (!Array.isArray(state.evidence)) throw new Error('STATE_EVIDENCE_INVALID');
-  for (const item of state.evidence) assertSchemaVersion('evidence', item?.schema_version);
+  for (const item of state.evidence) {
+    assertSchemaVersion('evidence', item?.schema_version);
+    if (item?.task_id !== state.task_id) throw new Error('STATE_EVIDENCE_BINDING_INVALID');
+  }
   return state;
 }
 export function loadState() {

@@ -62,6 +62,9 @@ test('all security-critical envelope schema versions reject drift', () => {
   assert.throws(() => validateStateEnvelope({...state,lease:{...state.lease,task_id:'other'}}), /STATE_LEASE_BINDING_INVALID/);
   assert.throws(() => validateStateEnvelope({...state,gate_challenge:{schema_version:'bar.gate-challenge.v2'}}), /SCHEMA_VERSION_UNSUPPORTED:gate_challenge/);
   assert.throws(() => validateStateEnvelope({...state,human_approval:{schema_version:'bar.human-approval.v2'}}), /SCHEMA_VERSION_UNSUPPORTED:human_approval/);
+  assert.throws(() => validateStateEnvelope({...state,evidence:[{schema_version:DATA_SCHEMA_VERSIONS.evidence,task_id:'other'}]}), /STATE_EVIDENCE_BINDING_INVALID/);
+  assert.throws(() => validateStateEnvelope({...state,gate_challenge:{schema_version:DATA_SCHEMA_VERSIONS.gate_challenge,task_id:'other'}}), /STATE_GATE_BINDING_INVALID/);
+  assert.throws(() => validateStateEnvelope({...state,human_approval:{schema_version:DATA_SCHEMA_VERSIONS.human_approval,challenge:{schema_version:DATA_SCHEMA_VERSIONS.gate_challenge,task_id:'other'}}}), /STATE_APPROVAL_BINDING_INVALID/);
 });
 test('gate signature binds identity and exact candidate', () => {
   const {publicKey,privateKey}=crypto.generateKeyPairSync('ed25519');
