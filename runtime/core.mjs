@@ -89,8 +89,14 @@ export function loadState() {
 export function saveState(state) { writeAtomic(STATE_FILE, JSON.stringify(state, null, 2) + '\n'); }
 function integrityKey() {
   ensureRuntimeDir();
-  if (!fs.existsSync(JOURNAL_KEY_FILE)) writeAtomic(JOURNAL_KEY_FILE, crypto.randomBytes(32).toString('hex') + '\n');
-  return Buffer.from(fs.readFileSync(JOURNAL_KEY_FILE, 'utf8').trim(), 'hex');
+  if (!fs.existsSync(JOURNAL_KEY_FILE)) {
+    const key = crypto.randomBytes(32).toString('hex') + '\n';
+    try { fs.writeFileSync(JOURNAL_KEY_FILE, key, { encoding: 'utf8', flag: 'wx', mode: 0o600 }); }
+    catch (error) { if (error?.code !== 'EEXIST') throw error; }
+  }
+  const encoded = fs.readFileSync(JOURNAL_KEY_FILE, 'utf8').trim();
+  if (!/^[a-f0-9]{64}$/i.test(encoded)) throw new Error('INTEGRITY_KEY_INVALID');
+  return Buffer.from(encoded, 'hex');
 }
 function readAnchor() {
   if (!fs.existsSync(JOURNAL_ANCHOR_FILE)) return { seq: 0, entry_hash: 'GENESIS', hmac: null };

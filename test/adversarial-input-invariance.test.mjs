@@ -1,9 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { createCapabilityRegistry } from '../runtime/boundary/capability-registry.mjs';
-import { decideBoundaryAuthority } from '../runtime/boundary/authority-engine.mjs';
-import { createBoundaryVerificationEvidence } from '../runtime/boundary/evidence-contract.mjs';
+
+// Evidence integrity uses durable runtime state. Give this test file its own
+// runtime root so parallel node:test workers cannot rotate or remove its HMAC key.
+process.env.BOUNDED_AGENT_RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'bar-adversarial-boundary-'));
+const { decideBoundaryAuthority } = await import('../runtime/boundary/authority-engine.mjs');
+const { createBoundaryVerificationEvidence } = await import('../runtime/boundary/evidence-contract.mjs');
 
 const manifest = JSON.parse(fs.readFileSync(new URL('../examples/boundary-capabilities.example.json', import.meta.url), 'utf8'));
 const registry = createCapabilityRegistry(manifest);
