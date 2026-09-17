@@ -23,4 +23,10 @@ test('SDLC gate policy preserves BAR hard security floor', () => {
   assert.equal(policy.policyIntegrity.candidateMayWeakenBase, false);
   assert.equal(policy.policyIntegrity.policyChangesRequireIndependentReview, true);
   assert.equal(policy.policyIntegrity.policyChangesRequireHumanGate, true);
+  assert.deepEqual(policy.policyIntegrity.bootstrapTrustFloor, ['AGENTS.md', 'SECURITY.md']);
+  assert.deepEqual(policy.rules, [
+    'Authority, credential isolation, fencing, recovery and fail-closed behavior are release-blocking.',
+    'Agent verdicts never replace deterministic adversarial evidence.',
+    'No automatic merge or productive deployment.'
+  ]);
 });
