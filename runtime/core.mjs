@@ -24,6 +24,23 @@ const CONTROLLER_LOCK_DIR = path.join(CORE_DIR, 'controller-lock');
 const CONTROLLER_LOCK_OWNER = path.join(CONTROLLER_LOCK_DIR, 'owner.json');
 let SAFE_HOOKS_DIR = null;
 
+export const DATA_SCHEMA_VERSIONS = Object.freeze({
+  task: 1,
+  state: 1,
+  journal: 'bar.journal-entry.v1',
+  evidence: 'bar.evidence.v1',
+  lease: 'bar.lease.v1',
+  gate_challenge: 'bar.gate-challenge.v1',
+  human_approval: 'bar.human-approval.v1',
+  nonce_ledger: 'bar.nonce-ledger.v1',
+  authorization_receipt: 'bar.authorization-receipt.v3'
+});
+export function assertSchemaVersion(kind, value) {
+  const expected = DATA_SCHEMA_VERSIONS[kind];
+  if (expected === undefined) throw new Error(`SCHEMA_KIND_UNKNOWN:${kind}`);
+  if (value !== expected) throw new Error(`SCHEMA_VERSION_UNSUPPORTED:${kind}:${String(value)}`);
+  return true;
+}
 export const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 const hmac256 = (key, value) => crypto.createHmac('sha256', key).update(value).digest('hex');
 export function ensureRuntimeDir() {
@@ -82,11 +99,23 @@ function writeAtomic(file, text, mode = 0o600) {
   finally { fs.closeSync(fd); }
   fs.renameSync(temp, file);
 }
+export function validateStateEnvelope(state) {
+  if (!state || typeof state !== 'object') throw new Error('STATE_INVALID');
+  assertSchemaVersion('state', state.schema_version);
+  if (typeof state.task_id !== 'string' || typeof state.state !== 'string' || !Number.isSafeInteger(state.state_version) || state.state_version < 0) throw new Error('STATE_ENVELOPE_INVALID');
+  if (!state.task || typeof state.task !== 'object' || state.task_id !== state.task.task_id) throw new Error('STATE_TASK_BINDING_INVALID');
+  validateTask(state.task);
+  if (!state.lease || typeof state.lease !== 'object') throw new Error('STATE_LEASE_REQUIRED');
+  assertSchemaVersion('lease', state.lease.schema_version);
+  if (!Array.isArray(state.evidence)) throw new Error('STATE_EVIDENCE_INVALID');
+  for (const item of state.evidence) assertSchemaVersion('evidence', item?.schema_version);
+  return state;
+}
 export function loadState() {
   if (!fs.existsSync(STATE_FILE)) throw new Error('RUNTIME_NOT_INITIALIZED');
-  return readJson(STATE_FILE);
+  return validateStateEnvelope(readJson(STATE_FILE));
 }
-export function saveState(state) { writeAtomic(STATE_FILE, JSON.stringify(state, null, 2) + '\n'); }
+export function saveState(state) { validateStateEnvelope(state); writeAtomic(STATE_FILE, JSON.stringify(state, null, 2) + '\n'); }
 function integrityKey() {
   ensureRuntimeDir();
   if (!fs.existsSync(JOURNAL_KEY_FILE)) {
@@ -116,6 +145,7 @@ export function verifyJournal({ repairAnchor = false } = {}) {
   const entries = []; let prev = 'GENESIS'; let seq = 0;
   if (raw) for (const line of raw.split(/\r?\n/)) {
     let entry; try { entry = JSON.parse(line); } catch { throw new Error('JOURNAL_PARSE_ERROR'); }
+    assertSchemaVersion('journal', entry.schema_version);
     seq += 1;
     if (entry.seq !== seq || entry.prev_hash !== prev) throw new Error('JOURNAL_CHAIN_INVALID');
     const canonical = canonicalJournalEntry(entry);
@@ -139,7 +169,7 @@ export function journal(event, details = {}) {
   const key = integrityKey();
   const prior = verifyJournal({ repairAnchor: true });
   const prev = prior.at(-1)?.entry_hash || 'GENESIS';
-  const base = { seq: prior.length + 1, at: new Date().toISOString(), event, ...details, prev_hash: prev };
+  const base = { ...details, schema_version: DATA_SCHEMA_VERSIONS.journal, seq: prior.length + 1, at: new Date().toISOString(), event, prev_hash: prev };
   const canonical = JSON.stringify(base);
   const hmac = hmac256(key, canonical);
   const entry_hash = sha256(canonical + ':' + hmac);
@@ -178,12 +208,14 @@ export function recoverState(state) {
   throw new Error('RECOVERY_STATE_JOURNAL_MISMATCH');
 }
 export function newLease(taskId, ttlMs = 300000, generation = Date.now()) {
-  return { task_id: taskId, owner: `controller-${process.pid}`, generation,
+  return { schema_version: DATA_SCHEMA_VERSIONS.lease, task_id: taskId, owner: `controller-${process.pid}`, generation,
     expires_at: new Date(Date.now() + ttlMs).toISOString(),
     fencing_token: sha256(`${taskId}:${generation}:${crypto.randomUUID()}`) };
 }
 export function assertFreshLease(lease, expectedGeneration = lease?.generation) {
-  if (!lease || Date.parse(lease.expires_at) <= Date.now()) throw new Error('STALE_LEASE');
+  if (!lease) throw new Error('STALE_LEASE');
+  assertSchemaVersion('lease', lease.schema_version);
+  if (Date.parse(lease.expires_at) <= Date.now()) throw new Error('STALE_LEASE');
   if (lease.generation !== expectedGeneration) throw new Error('FENCING_MISMATCH');
 }
 export function assertCurrentFence(localState) {
@@ -230,6 +262,7 @@ export function remainingWallClockMs(state) {
 }
 export function validateTask(task) {
   for (const key of ['schema_version','task_id','intent','allowed_actions','allowed_paths','budget','protected_actions']) if (task[key] === undefined) throw new Error(`TASK_FIELD_MISSING:${key}`);
+  assertSchemaVersion('task', task.schema_version);
   if (!Array.isArray(task.allowed_actions) || !Array.isArray(task.allowed_paths) || !Array.isArray(task.protected_actions)) throw new Error('TASK_ARRAY_INVALID');
   if (typeof task.task_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(task.task_id)) throw new Error('TASK_ID_INVALID');
   if (!task.allowed_paths.length) throw new Error('TASK_ALLOWED_PATHS_EMPTY');
@@ -299,7 +332,7 @@ export function assertAllowedPath(task, relativePath) {
   return true;
 }
 function evidenceBase(claim, payload, state, producer, trustClass) {
-  return { evidence_id: crypto.randomUUID(), task_id: state.task_id, claim,
+  return { schema_version: DATA_SCHEMA_VERSIONS.evidence, evidence_id: crypto.randomUUID(), task_id: state.task_id, claim,
     producer_identity: producer, trust_class: trustClass,
     candidate_sha: payload.candidate_sha ?? state.candidate_sha,
     tree_hash: payload.tree_hash ?? state.tree_hash,
@@ -312,6 +345,7 @@ export function evidence(claim, payload, state, producer = 'controller', trustCl
   return { ...base, integrity_hmac: hmac256(integrityKey(), JSON.stringify(base)) };
 }
 export function verifyEvidence(item, state) {
+  assertSchemaVersion('evidence', item?.schema_version);
   const { integrity_hmac, ...base } = item;
   if (!integrity_hmac || hmac256(integrityKey(), JSON.stringify(base)) !== integrity_hmac) throw new Error('EVIDENCE_INTEGRITY_INVALID');
   if (item.task_id !== state.task_id || item.candidate_sha !== state.candidate_sha || item.tree_hash !== state.tree_hash) throw new Error('EVIDENCE_BINDING_INVALID');
@@ -445,13 +479,14 @@ export function publicKeyFingerprint(publicKeyPem) {
 }
 export function createGateChallenge(state) {
   const protected_actions = [...(state.task?.protected_actions ?? [])].sort();
-  return { task_id: state.task_id, candidate_sha: state.candidate_sha, tree_hash: state.tree_hash,
+  return { schema_version: DATA_SCHEMA_VERSIONS.gate_challenge, task_id: state.task_id, candidate_sha: state.candidate_sha, tree_hash: state.tree_hash,
     state_version: state.state_version, protected_actions, protected_actions_hash: sha256(JSON.stringify(protected_actions)), nonce: crypto.randomUUID() };
 }
 
 export function canonicalGatePayload(challenge, decisionIdentity, decision = 'ACCEPT') {
-  const { task_id, candidate_sha, tree_hash, state_version, protected_actions, protected_actions_hash, nonce } = challenge;
-  return JSON.stringify({ task_id, candidate_sha, tree_hash, state_version, protected_actions, protected_actions_hash, nonce, decision, decision_identity: decisionIdentity });
+  assertSchemaVersion('gate_challenge', challenge?.schema_version);
+  const { schema_version, task_id, candidate_sha, tree_hash, state_version, protected_actions, protected_actions_hash, nonce } = challenge;
+  return JSON.stringify({ schema_version, task_id, candidate_sha, tree_hash, state_version, protected_actions, protected_actions_hash, nonce, decision, decision_identity: decisionIdentity });
 }
 export function verifyGateSignature(challenge, signatureBase64, publicKeyPem, decisionIdentity, decision = 'ACCEPT') {
   if (!challenge || !signatureBase64 || !publicKeyPem || !decisionIdentity) throw new Error('GATE_SIGNATURE_INPUT_MISSING');
@@ -478,6 +513,7 @@ export function canonicalAuthorizationReceipt(receipt) {
   return canonicalJson(base);
 }
 export function signAuthorizationReceipt(receipt) {
+  assertSchemaVersion('authorization_receipt', receipt?.schema_version);
   const keys = ensureAuthorizationReceiptKeyPair();
   const controller_key_fingerprint = publicKeyFingerprint(keys.publicKey);
   const unsigned = { ...receipt, controller_key_fingerprint };
@@ -489,6 +525,7 @@ export function authorizationReceiptPublicKey() {
   return { public_key: keys.publicKey, fingerprint: publicKeyFingerprint(keys.publicKey) };
 }
 export function verifyAuthorizationReceipt(receipt, publicKeyPem) {
+  assertSchemaVersion('authorization_receipt', receipt?.schema_version);
   if (!receipt?.controller_signature || !publicKeyPem) throw new Error('AUTHORIZATION_RECEIPT_SIGNATURE_REQUIRED');
   if (receipt.controller_key_fingerprint !== publicKeyFingerprint(publicKeyPem)) throw new Error('AUTHORIZATION_RECEIPT_KEY_FINGERPRINT_MISMATCH');
   const ok = crypto.verify(null, Buffer.from(canonicalAuthorizationReceipt(receipt)), publicKeyPem, Buffer.from(receipt.controller_signature, 'base64'));
@@ -508,14 +545,17 @@ function approverPolicy() {
 }
 function readNonceLedger() {
   const key = integrityKey();
-  if (!fs.existsSync(NONCE_LEDGER_FILE)) return { entries: [] };
+  if (!fs.existsSync(NONCE_LEDGER_FILE)) return { schema_version: DATA_SCHEMA_VERSIONS.nonce_ledger, entries: [] };
   const doc = readJson(NONCE_LEDGER_FILE); const { hmac, ...base } = doc;
+  assertSchemaVersion('nonce_ledger', base.schema_version);
+  if (!Array.isArray(base.entries)) throw new Error('NONCE_LEDGER_ENTRIES_INVALID');
   if (!hmac || hmac256(key, JSON.stringify(base)) !== hmac) throw new Error('NONCE_LEDGER_INTEGRITY_INVALID');
   return base;
 }
 function writeNonceLedger(base) {
   const key = integrityKey();
-  writeAtomic(NONCE_LEDGER_FILE, JSON.stringify({ ...base, hmac: hmac256(key, JSON.stringify(base)) }, null, 2) + '\n');
+  const canonical = { schema_version: DATA_SCHEMA_VERSIONS.nonce_ledger, entries: base.entries ?? [] };
+  writeAtomic(NONCE_LEDGER_FILE, JSON.stringify({ ...canonical, hmac: hmac256(key, JSON.stringify(canonical)) }, null, 2) + '\n');
 }
 function challengeHash(challenge, identity) {
   return sha256(canonicalGatePayload(challenge, identity, 'ACCEPT'));
@@ -550,13 +590,14 @@ export function createHumanApproval(state, signatureBase64) {
   const policy = approverPolicy(); if (state.approver_identity !== policy.identity) throw new Error('APPROVER_IDENTITY_MISMATCH');
   verifyGateSignature(state.gate_challenge, signatureBase64, policy.publicKey, policy.identity);
   consumeApprovalNonce(state.gate_challenge, policy.identity, signatureBase64);
-  return { challenge: state.gate_challenge, signature: signatureBase64, decision: 'ACCEPT', decision_identity: policy.identity, public_key_fingerprint: policy.fingerprint,
+  return { schema_version: DATA_SCHEMA_VERSIONS.human_approval, challenge: state.gate_challenge, signature: signatureBase64, decision: 'ACCEPT', decision_identity: policy.identity, public_key_fingerprint: policy.fingerprint,
     signed_payload_hash: challengeHash(state.gate_challenge, policy.identity), approved_at: new Date().toISOString() };
 }
 export function assertHumanApproval(state, action) {
   if (!state.task?.allowed_actions?.includes(action)) throw new Error('CAPABILITY_DENIED:' + action);
   if (!state.task?.protected_actions?.includes(action)) throw new Error('PROTECTED_ACTION_NOT_DECLARED:' + action);
   const policy = approverPolicy(); const approval = state.human_approval;
+  if (approval) assertSchemaVersion('human_approval', approval.schema_version);
   if (!approval || !['ACCEPTED','CONTROLLER_MUTATION','VERIFIED','DONE'].includes(state.state)) throw new Error('HUMAN_GATE_REQUIRED:' + action);
   if (approval.decision !== 'ACCEPT' || approval.decision_identity !== policy.identity || approval.public_key_fingerprint !== policy.fingerprint) throw new Error('HUMAN_APPROVAL_POLICY_MISMATCH');
   verifyGateSignature(approval.challenge, approval.signature, policy.publicKey, policy.identity, approval.decision);
