@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "project_id": "bounded-agent-runtime",
+  "purpose": "Enforce safe execution boundaries for agents: authority, leases, fencing, approvals, credential isolation and recovery.",
+  "active": true,
+  "source_of_truth": "github",
+  "responsibility": "execution-boundary",
+  "agents": {
+    "core": ["orchestrator", "engineer", "qa", "security", "reviewer"],
+    "specialists": ["boundary-specialist"]
+  },
+  "critical_actions": {"requires_bar": true, "requires_human_gate": true},
+  "must_not_become": ["business-planner", "general-company-brain"],
+  "portable_target": true
+}
