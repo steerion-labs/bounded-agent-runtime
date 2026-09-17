@@ -24,7 +24,7 @@ Evaluate Prime Agent as a long-running Builder/Reviewer harness behind BAR. Prim
 ## Local proof on 2026-09-05
 - BAR branch exact head after POC tests: `d6728c09a0b6ca0a6174258cde5a5c1a5874e305` at test clone time
 - `node --test test/prime-agent-adapter.test.mjs`: 5/5 PASS
-- tests cover registration without auto-selection, ephemeral invocation, authority-widening rejection, reviewer read-only enforcement and credential stripping/home isolation
+- tests cover registration without auto-selection, fail-closed invocation isolation, authority-widening rejection, reviewer read-only enforcement and credential stripping/home isolation
 - `git diff --check`: invoked in the same local test slice; no code mutation was produced by the test
 
 ## Upstream Windows install smoke
