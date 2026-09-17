@@ -107,6 +107,9 @@ export function validateStateEnvelope(state) {
   validateTask(state.task);
   if (!state.lease || typeof state.lease !== 'object') throw new Error('STATE_LEASE_REQUIRED');
   assertSchemaVersion('lease', state.lease.schema_version);
+  if (state.lease.task_id !== state.task_id) throw new Error('STATE_LEASE_BINDING_INVALID');
+  if (state.gate_challenge !== undefined) assertSchemaVersion('gate_challenge', state.gate_challenge?.schema_version);
+  if (state.human_approval !== undefined) assertSchemaVersion('human_approval', state.human_approval?.schema_version);
   if (!Array.isArray(state.evidence)) throw new Error('STATE_EVIDENCE_INVALID');
   for (const item of state.evidence) assertSchemaVersion('evidence', item?.schema_version);
   return state;
