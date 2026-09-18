@@ -53,5 +53,33 @@
       "AGENTS.md",
       "SECURITY.md"
     ]
+  },
+  "independentReview": {
+    "controllerVerifiedAttestationRequired": true,
+    "failClosedIfMissingOrUnverifiable": true,
+    "exactCandidateBindingRequired": true,
+    "distinctReviewerIdentityRequired": true,
+    "separateWorkspaceRequired": true,
+    "readOnlyReviewerRequired": true,
+    "credentialSeparationRequired": true,
+    "additionalTrustSeparationRequired": true,
+    "allowedAdditionalSeparationFactors": [
+      "provider",
+      "model",
+      "operator",
+      "trust-domain"
+    ],
+    "requiredAttestationFields": [
+      "candidate_sha",
+      "tree_hash",
+      "builder_identity",
+      "reviewer_identity",
+      "reviewer_workspace",
+      "reviewer_read_only",
+      "builder_credential_domain",
+      "reviewer_credential_domain",
+      "separation_factor",
+      "separation_factor_value"
+    ]
   }
 }

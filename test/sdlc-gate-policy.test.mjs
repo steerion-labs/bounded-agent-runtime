@@ -14,6 +14,22 @@ test('SDLC gate policy preserves BAR hard security floor', () => {
   assert.equal(policy.requiredEvidence.exactHeadRequired, true);
   assert.equal(policy.requiredEvidence.existingCiMustPass, true);
   assert.equal(policy.requiredEvidence.independentReviewRequired, true);
+  assert.equal(policy.requiredEvidence.changedFilesRequired, true);
+  assert.equal(policy.requiredEvidence.useAgentSystemChecksWhenPresent, true);
+  assert.equal(policy.independentReview.controllerVerifiedAttestationRequired, true);
+  assert.equal(policy.independentReview.failClosedIfMissingOrUnverifiable, true);
+  assert.equal(policy.independentReview.exactCandidateBindingRequired, true);
+  assert.equal(policy.independentReview.distinctReviewerIdentityRequired, true);
+  assert.equal(policy.independentReview.separateWorkspaceRequired, true);
+  assert.equal(policy.independentReview.readOnlyReviewerRequired, true);
+  assert.equal(policy.independentReview.credentialSeparationRequired, true);
+  assert.equal(policy.independentReview.additionalTrustSeparationRequired, true);
+  assert.deepEqual(policy.independentReview.allowedAdditionalSeparationFactors, ['provider', 'model', 'operator', 'trust-domain']);
+  assert.deepEqual(policy.independentReview.requiredAttestationFields, [
+    'candidate_sha', 'tree_hash', 'builder_identity', 'reviewer_identity',
+    'reviewer_workspace', 'reviewer_read_only', 'builder_credential_domain',
+    'reviewer_credential_domain', 'separation_factor', 'separation_factor_value'
+  ]);
   assert.equal(policy.externalAgentApps.installAutomatically, false);
   assert.equal(policy.externalAgentApps.mayBeSoleReleaseEvidence, false);
   assert.equal(policy.externalAgentApps.requiresHumanApprovalForInstallOrNewSpend, true);

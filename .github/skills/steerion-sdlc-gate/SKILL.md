@@ -19,7 +19,11 @@ Use this skill for pull requests, release-readiness checks, implementation hando
 1. Scope the requested outcome and confirm the change addresses it without inventing product evidence.
 2. Identify code, dependency, data, credential, authority and release impact from the diff.
 3. Inspect changed manifests and lockfiles with available local/native tooling. Third-party Agent Apps are optional evidence only.
-4. Require independent review for material builder changes. Builder self-attestation is insufficient.
+4. Require independent review for material builder changes. Builder self-attestation is insufficient. A second process, workspace or reviewer hash alone proves separation, not independence.
+   - Count a review as independent only when the controller/orchestrator verifies an attestation bound to the exact candidate SHA and tree hash.
+   - The attestation must prove a different reviewer identity, a separate reviewer workspace, read-only reviewer authority, and a credential domain distinct from the Builder.
+   - It must also prove at least one additional trust-separation factor differs from the Builder: provider, model, operator, or trust domain.
+   - Reviewer/model self-attestation is untrusted. Missing, incomplete or unverifiable independence evidence is `BLOCKED`.
 5. Run all commands required by the accepted-base policy plus all applicable existing repository checks. Candidate policy may add stricter checks but may never remove or replace base-required checks. During bootstrap, use the existing base repository checks. Missing required evidence is `BLOCKED`; failing evidence is `NO-GO`.
 6. Existing required CI must be green for the exact head before `GO`.
 7. Enforce the accepted-base project rules. Candidate policy changes may add restrictions but may not remove or weaken accepted-base requirements during their own review.
