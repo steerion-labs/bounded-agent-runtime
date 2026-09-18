@@ -1,5 +1,7 @@
 # Bounded Agent Runtime
 
+**An open-source project by [Steerion Labs](https://github.com/steerion-labs).**
+
 ### Give coding agents freedom to work. Keep authority out of the model.
 
 **BAR is a model-agnostic security runtime for autonomous coding agents.** Codex, Claude Code, OpenCode, containers or your own agent can build and review code, while a deterministic controller keeps scope, evidence, budgets and protected-action authorization outside the LLM.
@@ -124,7 +126,7 @@ BAR deliberately avoids dangerous permission-bypass flags in its primary adapter
 
 ### Maturity and deployment boundary
 
-BAR is an early open-source security runtime, not a certified enterprise security product. The core authority/evidence path is heavily tested, but production assurance still depends on the deployment host, chosen worker boundary and external side-effect adapter.
+BAR is an open-source security runtime, not a certified enterprise security product. The core authority/evidence path is heavily tested, but production assurance still depends on the deployment host, chosen worker boundary and external side-effect adapter.
 
 Local Claude Code, Codex and OpenCode adapters are **process boundaries, not OS sandboxes**. Use the Docker adapter or an independently hardened host/runtime when stronger isolation is required.
 
@@ -224,7 +226,7 @@ Good fits include autonomous coding loops, internal developer agents, regulated 
 
 ## Contribute
 
-BAR is early and intentionally opinionated. That makes this a good time to shape the interfaces, adapters and hardening model.
+BAR is intentionally opinionated. Contributions that strengthen interoperability, evidence quality and security boundaries are welcome.
 
 - open an issue with a concrete use case
 - propose an agent integration

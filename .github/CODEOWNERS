@@ -1,8 +1,0 @@
-# Default owner for repository changes
-* @vebivejseli-hub
-
-# Security-sensitive surfaces
-/.github/ @vebivejseli-hub
-/runtime/ @vebivejseli-hub
-/policies/ @vebivejseli-hub
-/SECURITY.md @vebivejseli-hub
