@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
-  newLease, assertFreshLease, assertBudget, authorize, assertAllowedPath,
+  DATA_SCHEMA_VERSIONS, assertSchemaVersion, validateStateEnvelope, newLease, assertFreshLease, assertBudget, authorize, assertAllowedPath,
   createGateChallenge, canonicalGatePayload, verifyGateSignature, validateTask, canonicalAuthorizationReceipt, verifyAuthorizationReceipt,
   ensureGitRepo, commitWorkspace, gitIdentity, assertWorkspaceIdentity, assertWorkerExecutionBoundary, assertVerificationExecutionBoundary
 } from '../runtime/core.mjs';
@@ -40,6 +40,42 @@ test('path policy rejects traversal and non-allowlisted files', () => {
   assert.doesNotThrow(() => assertAllowedPath(task,'demo-output/file.txt'));
 });
 test('task schema fails closed', () => assert.throws(() => validateTask({task_id:'x'}), /TASK_FIELD_MISSING/));
+test('task schema version drift fails closed', () => {
+  const base={schema_version:1,task_id:'schema-drift',intent:'x',allowed_actions:['build_local'],allowed_paths:['src'],protected_actions:[],budget:{model_calls:1,wall_clock_seconds:10,retries:0}};
+  assert.doesNotThrow(() => validateTask(base));
+  for (const schema_version of [0,2,'1','bar.task.v2',null]) assert.throws(() => validateTask({...base,schema_version}), /SCHEMA_VERSION_UNSUPPORTED:task/);
+});
+test('all security-critical envelope schema versions reject drift', () => {
+  for (const [kind, expected] of Object.entries(DATA_SCHEMA_VERSIONS)) {
+    assert.equal(assertSchemaVersion(kind, expected), true);
+    const drift = typeof expected === 'number' ? expected + 1 : expected + '.drift';
+    assert.throws(() => assertSchemaVersion(kind, drift), new RegExp('SCHEMA_VERSION_UNSUPPORTED:' + kind));
+  }
+  const lease=newLease('schema-lease',10000,7);
+  assert.equal(lease.schema_version, DATA_SCHEMA_VERSIONS.lease);
+  assert.throws(() => assertFreshLease({...lease,schema_version:'bar.lease.v2'},7), /SCHEMA_VERSION_UNSUPPORTED:lease/);
+  const task={schema_version:DATA_SCHEMA_VERSIONS.task,task_id:'schema-state',intent:'x',allowed_actions:['build_local'],allowed_paths:['src'],protected_actions:[],budget:{model_calls:1,wall_clock_seconds:10,retries:0}};
+  const state={schema_version:DATA_SCHEMA_VERSIONS.state,task_id:'schema-state',state:'NEW',state_version:0,task,lease:newLease('schema-state',10000,8),evidence:[]};
+  assert.equal(validateStateEnvelope(state),state);
+  assert.throws(() => validateStateEnvelope({...state,schema_version:2}), /SCHEMA_VERSION_UNSUPPORTED:state/);
+  assert.throws(() => validateStateEnvelope({...state,task_id:'other'}), /STATE_TASK_BINDING_INVALID/);
+  assert.throws(() => validateStateEnvelope({...state,lease:{...state.lease,task_id:'other'}}), /STATE_LEASE_BINDING_INVALID/);
+  assert.throws(() => validateStateEnvelope({...state,gate_challenge:{schema_version:'bar.gate-challenge.v2'}}), /SCHEMA_VERSION_UNSUPPORTED:gate_challenge/);
+  assert.throws(() => validateStateEnvelope({...state,human_approval:{schema_version:'bar.human-approval.v2'}}), /SCHEMA_VERSION_UNSUPPORTED:human_approval/);
+  assert.throws(() => validateStateEnvelope({...state,evidence:[{schema_version:DATA_SCHEMA_VERSIONS.evidence,task_id:'other'}]}), /STATE_EVIDENCE_BINDING_INVALID/);
+  assert.throws(() => validateStateEnvelope({...state,gate_challenge:{schema_version:DATA_SCHEMA_VERSIONS.gate_challenge,task_id:'other'}}), /STATE_GATE_BINDING_INVALID/);
+  assert.throws(() => validateStateEnvelope({...state,human_approval:{schema_version:DATA_SCHEMA_VERSIONS.human_approval,challenge:{schema_version:DATA_SCHEMA_VERSIONS.gate_challenge,task_id:'other'}}}), /STATE_APPROVAL_BINDING_INVALID/);
+  assert.throws(() => assertFreshLease({schema_version:DATA_SCHEMA_VERSIONS.lease,task_id:'schema-lease'}), /LEASE_ENVELOPE_INVALID/);
+  assert.throws(() => validateStateEnvelope({...state,lease:{...state.lease,expires_at:'not-a-date'}}), /LEASE_ENVELOPE_INVALID/);
+  const boundState={...state,candidate_sha:'abc',tree_hash:'tree'};
+  const challenge=createGateChallenge(boundState);
+  assert.equal(validateStateEnvelope({...boundState,gate_challenge:challenge}).gate_challenge,challenge);
+  const {nonce,...challengeWithoutNonce}=challenge;
+  assert.throws(() => validateStateEnvelope({...boundState,gate_challenge:challengeWithoutNonce}), /GATE_CHALLENGE_ENVELOPE_INVALID/);
+  assert.throws(() => validateStateEnvelope({...state,evidence:[{schema_version:DATA_SCHEMA_VERSIONS.evidence,task_id:state.task_id}]}), /EVIDENCE_ENVELOPE_INVALID/);
+  const malformedApproval={schema_version:DATA_SCHEMA_VERSIONS.human_approval,challenge,decision:'ACCEPT',decision_identity:'demo-approver',public_key_fingerprint:'a'.repeat(64),signed_payload_hash:'b'.repeat(64),approved_at:new Date().toISOString()};
+  assert.throws(() => validateStateEnvelope({...boundState,gate_challenge:challenge,approver_identity:'demo-approver',human_approval:malformedApproval}), /HUMAN_APPROVAL_ENVELOPE_INVALID/);
+});
 test('gate signature binds identity and exact candidate', () => {
   const {publicKey,privateKey}=crypto.generateKeyPairSync('ed25519');
   const challenge=createGateChallenge({task_id:'t1',candidate_sha:'abc',tree_hash:'tree1',state_version:9});
