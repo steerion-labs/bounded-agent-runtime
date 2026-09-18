@@ -4,7 +4,7 @@ Effective: 2026-09-08
 Status: ACTIVE
 
 ## Purpose
-This project follows the shared AI-assisted delivery model used across Steerion Labs projects.
+This project follows the shared AI-assisted delivery model used across Steerion Labs' active projects.
 
 ## Roles
 - Human owner: final decision authority and Human Gate.

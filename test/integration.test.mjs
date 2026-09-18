@@ -249,7 +249,7 @@ test('persisted lease takeover fences a stale controller snapshot',()=>{
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-fence-')); const env=baseEnv(cwd);
   assert.equal(run(['init',task],cwd,env).status,0);
   const coreUrl=new URL('../runtime/core.mjs',import.meta.url).href;
-  const code=`import fs from 'node:fs'; import {loadState,saveState,assertCurrentLease} from ${JSON.stringify(coreUrl)}; const local=loadState(); const newer=structuredClone(local); newer.lease.generation+=1; newer.lease.fencing_token='takeover'; saveState(newer); try { assertCurrentLease(local); process.exit(9); } catch(e) { console.error(e.message); process.exit(0); }`;
+  const code=`import fs from 'node:fs'; import {loadState,saveState,assertCurrentLease} from ${JSON.stringify(coreUrl)}; const local=loadState(); const newer=structuredClone(local); newer.lease.generation+=1; newer.lease.fencing_token='a'.repeat(64); saveState(newer); try { assertCurrentLease(local); process.exit(9); } catch(e) { console.error(e.message); process.exit(0); }`;
   const probe=spawnSync(process.execPath,['--input-type=module','-e',code],{cwd,encoding:'utf8',env}); assert.equal(probe.status,0,probe.stderr); assert.match(probe.stderr,/STALE_CONTROLLER_GENERATION|STALE_CONTROLLER_FENCE/);
 });
 test('state rollback is rejected against the authenticated journal before rerun',()=>{
@@ -269,7 +269,7 @@ test('removing protected action from persisted task is rejected',()=>{
   state.task.protected_actions=[];
   fs.writeFileSync(stateFor(cwd),JSON.stringify(state,null,2));
   const auth=run(['authorize-protected','merge'],cwd,keys.env);
-  assert.notEqual(auth.status,0); assert.match(auth.stderr,/TASK_BINDING_INVALID|CAPABILITY_DENIED|PROTECTED_ACTION_NOT_DECLARED/);
+  assert.notEqual(auth.status,0); assert.match(auth.stderr,/TASK_BINDING_INVALID|CAPABILITY_DENIED|PROTECTED_ACTION_NOT_DECLARED|STATE_GATE_ACTION_SCOPE_INVALID/);
 });
 
 test('hostile Git environment variables are neutralized',()=>{
