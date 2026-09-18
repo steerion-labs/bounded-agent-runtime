@@ -2,13 +2,16 @@
 
 BAR follows an evidence-first roadmap. Items are direction, not promises or delivery dates.
 
-## v0.4 Usability and adoption
+## Shipped foundation
 
 - guided first-run quickstart and safer error guidance
-- clearer status and Human Gate next steps
+- clear Human Gate and protected-action handoff
 - adapter conformance contract and reproducible examples
-- clone and ZIP installation paths
-- contribution templates and starter issues
+- exact candidate and evidence binding
+- container-isolated Builder/Reviewer path
+- controller-signed authorization receipts
+- recovery, fencing, replay protection and fail-closed security checks
+- Codex, Claude Code and OpenCode adapter support
 
 ## Next candidates
 
@@ -16,15 +19,11 @@ BAR follows an evidence-first roadmap. Items are direction, not promises or deli
 - signed machine-readable verification bundles
 - additional isolated execution providers behind the same controller contract
 - improved local read-only evidence UI
-- side-effect adapter specification with idempotency and reconciliation requirements, without shipping automatic mutation by default
+- reviewed reference integrations that consume authorization receipts without weakening the Human Gate
+- short terminal demo / GIF for a real bounded task
 
 ## Non-goals
 
 BAR will not move policy or protected authority into an LLM, silently auto-approve protected actions, or claim a child process is an OS sandbox.
 
-## Adoption / integration
-
-- [x] Quickstart regression coverage for missing or unusable TEMP/TMP/TMPDIR
-- [x] Controller-signed, journaled protected-action authorization receipt plus read-only verification path
-- [ ] Publish short terminal demo / GIF for a real bounded task
-- [ ] Add reviewed reference integrations that consume authorization receipts without weakening the Human Gate
+Security-sensitive roadmap items require exact-head evidence, independent review and an explicit Human Gate before protected promotion.
