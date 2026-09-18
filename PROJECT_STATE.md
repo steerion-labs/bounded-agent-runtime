@@ -9,12 +9,12 @@ Product lifecycle: STABLE_MAINTENANCE
 
 - Repository: `steerion-labs/bounded-agent-runtime`
 - Branch: `main`
-- Security/Data-Discipline outcome: PR #64 accepted through explicit Vebi Human Gate and merged.
-- Accepted merge commit: `937622b6441edccb4494e1c704b45b2703210913`
-- Exact candidate before merge: `f74d5f45babfeee545f91a310215e54edd15da28`
-- Exact-head BAR CI: PASS
-- Exact-head CodeQL: PASS
-
+- Final technical baseline: `2e8845f13beb48618b4aa78d2125792064d2e47b`
+- Final promotion set accepted through explicit Human Gate: PRs #45, #46, #58, #59 and #64.
+- Final exact-head independent review for PR #58: NVIDIA Nemotron 3 Super 120B `PASS / FINDINGS NONE`.
+- Final `main` regression: 163/163 PASS, 0 FAIL.
+- Final `git diff --check`: PASS.
+- Final repository queue at closure: 0 open PRs, 0 open Issues.
 ## Portfolio rule
 
 BAR is no longer an active engineering push lane. Treat it as maintenance-only unless a new concrete security/product blocker is proven or Vebi explicitly reactivates it.
