@@ -49,7 +49,7 @@ try {
   } catch (error) { evidenceDriftRejected=/REMOTE_RESULT_HASH_MISMATCH|REMOTE_RESULT_EVIDENCE_MISMATCH/.test(String(error.message)); }
   try {
     validateRemoteDispatch({...dispatch,authority:{...dispatch.authority,remoteActions:[...dispatch.authority.remoteActions,'merge']}});
-  } catch (error) { authorityWideningRejected=/REMOTE_PROTECTED_ACTION_NOT_ALLOWED|REMOTE_AUTHORITY_HASH_MISMATCH/.test(String(error.message)); }
+  } catch (error) { authorityWideningRejected=/REMOTE_DISPATCH_HASH_MISMATCH|REMOTE_PROTECTED_ACTION_NOT_ALLOWED|REMOTE_AUTHORITY_HASH_MISMATCH/.test(String(error.message)); }
 } catch (error) {
   if(result.status===0) process.stderr.write(String(error.stack||error)+'\n');
 }
