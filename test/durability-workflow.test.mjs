@@ -29,7 +29,8 @@ test('durability proof binds recovery, fencing, replay and Human Gate evidence',
     'recovery can replay one durably journaled transition after a state-write crash',
     'persisted lease takeover fences a stale controller snapshot',
     'protected authorization rejects candidate drift after approval',
-    '4/4 PASS: HUMAN_GATE_REQUIRED',
+    'quickstart-human-gate',
+    'HUMAN_GATE_REQUIRED',
     'SOURCE_MUTATION_DETECTED'
   ]) assert.ok(proof.includes(marker),marker);
 });
