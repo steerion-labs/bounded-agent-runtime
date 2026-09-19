@@ -23,16 +23,19 @@ function canonical(value) {
 export function hashRemoteValue(value) {
   return crypto.createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 }
+function normalizeAction(value) {
+  if (typeof value !== 'string' || value !== value.trim() || value !== value.toLowerCase() || !/^[a-z][a-z0-9_:-]{0,63}$/.test(value)) throw new Error('REMOTE_ACTION_INVALID');
+  return value;
+}
 function uniqueSorted(values = []) {
   if (!Array.isArray(values)) throw new Error('REMOTE_AUTHORITY_ARRAY_REQUIRED');
-  return [...new Set(values.map(String))].sort();
+  return [...new Set(values.map(normalizeAction))].sort();
 }
 function normalizeAuthority(authority = {}) {
   const remoteActions = uniqueSorted(authority.remoteActions);
   const protectedActions = uniqueSorted(authority.protectedActions);
   if (authority.protectedEffectsAllowed !== false) throw new Error('REMOTE_PROTECTED_EFFECTS_MUST_BE_FALSE');
   for (const action of remoteActions) {
-    if (!nonEmpty(action)) throw new Error('REMOTE_ACTION_INVALID');
     if (protectedActions.includes(action) || PROTECTED_REMOTE_ACTIONS.has(action)) throw new Error('REMOTE_PROTECTED_ACTION_NOT_ALLOWED:' + action);
   }
   return { remoteActions, protectedActions, protectedEffectsAllowed: false };
@@ -119,9 +122,10 @@ export function createRemoteResult({ dispatch, providerId, providerRunId, status
   };
   return Object.freeze({ ...core, resultHash: hashRemoteValue(core) });
 }
-export function verifyRemoteResult({ dispatch, result, currentLease, consumedResultHashes = null, now = new Date() }) {
+export function verifyRemoteResult({ dispatch, result, currentLease, consumedResultHashes, now = new Date() }) {
   validateRemoteDispatch(dispatch, now);
-  if (!result || result.schemaVersion !== REMOTE_RESULT_SCHEMA || !sha64(result.resultHash)) throw new Error('REMOTE_RESULT_SCHEMA_INVALID');
+  if (!consumedResultHashes || typeof consumedResultHashes.has !== 'function' || typeof consumedResultHashes.add !== 'function') throw new Error('REMOTE_REPLAY_LEDGER_REQUIRED');
+  if (!result || result.schemaVersion !== REMOTE_RESULT_SCHEMA || !sha64(result.resultHash) || !nonEmpty(result.providerRunId) || !iso(result.collectedAt)) throw new Error('REMOTE_RESULT_SCHEMA_INVALID');
   if (result.resultHash !== hashRemoteValue(resultCore(result))) throw new Error('REMOTE_RESULT_HASH_MISMATCH');
   if (result.dispatchHash !== hashRemoteValue(dispatch) || result.taskId !== dispatch.taskId || result.sourceHead !== dispatch.sourceHead || result.providerId !== dispatch.providerId) throw new Error('REMOTE_RESULT_DISPATCH_MISMATCH');
   if (result.authorityHash !== dispatch.authorityHash) throw new Error('REMOTE_RESULT_AUTHORITY_MISMATCH');
@@ -132,10 +136,8 @@ export function verifyRemoteResult({ dispatch, result, currentLease, consumedRes
   if (!Array.isArray(result.evidence) || result.evidence.length === 0 || result.evidenceHash !== hashRemoteValue(result.evidence)) throw new Error('REMOTE_RESULT_EVIDENCE_MISMATCH');
   if (result.status !== 'PASS' || !sha40(result.candidateSha) || !sha40(result.treeHash)) throw new Error('REMOTE_RESULT_NOT_PASS');
   if (dispatch.expectedCandidate && (result.candidateSha !== dispatch.expectedCandidate.candidateSha || result.treeHash !== dispatch.expectedCandidate.treeHash)) throw new Error('REMOTE_CANDIDATE_DRIFT');
-  if (consumedResultHashes) {
-    if (consumedResultHashes.has(result.resultHash)) throw new Error('REMOTE_RESULT_REPLAY');
-    consumedResultHashes.add(result.resultHash);
-  }
+  if (consumedResultHashes.has(result.resultHash)) throw new Error('REMOTE_RESULT_REPLAY');
+  consumedResultHashes.add(result.resultHash);
   return true;
 }
 export function assertRemoteProvider(provider) {
