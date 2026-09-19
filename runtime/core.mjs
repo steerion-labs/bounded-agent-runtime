@@ -157,6 +157,7 @@ export function validateStateEnvelope(state) {
   if (state.human_approval != null) validateHumanApprovalEnvelope(state.human_approval, state);
   if (!Array.isArray(state.evidence)) throw new Error('STATE_EVIDENCE_INVALID');
   for (const item of state.evidence) validateEvidenceEnvelope(item, state);
+  assertRequiredEvidence(state);
   return state;
 }
 export function loadState() {
@@ -419,10 +420,25 @@ function controllerHooksPath() {
 }
 export function gitExec(repo, args, { timeout = 10000, stdio = ['ignore','pipe','pipe'], trim = true } = {}) {
   const hookPath = controllerHooksPath();
-  const output = execFileSync('git', ['-c', `core.hooksPath=${hookPath}`, '-c', 'protocol.file.allow=never', '-C', repo, ...args],
+  const output = execFileSync('git', ['-c', `core.hooksPath=${hookPath}`, '-c', 'core.fsmonitor=false', '-c', 'protocol.file.allow=never', '-C', repo, ...args],
     { encoding: 'utf8', timeout, env: safeGitEnv(), stdio });
   if (output == null) return '';
   return trim ? output.trim() : output.replace(/[\r\n]+$/, '');
+}
+export function captureGitControlState(repo) {
+  const gitDir = path.join(repo, '.git');
+  const config = path.join(gitDir, 'config');
+  const gitInfo = fs.lstatSync(gitDir);
+  const configInfo = fs.lstatSync(config);
+  if (!gitInfo.isDirectory() || gitInfo.isSymbolicLink()) throw new Error('GIT_CONTROL_DIR_INVALID');
+  if (!configInfo.isFile() || configInfo.isSymbolicLink() || configInfo.nlink > 1) throw new Error('GIT_CONTROL_CONFIG_INVALID');
+  return { config_hash: sha256(fs.readFileSync(config)), config_size: configInfo.size };
+}
+export function assertGitControlState(repo, expected) {
+  if (!expected?.config_hash) throw new Error('GIT_CONTROL_SNAPSHOT_REQUIRED');
+  const current = captureGitControlState(repo);
+  if (current.config_hash !== expected.config_hash || current.config_size !== expected.config_size) throw new Error('GIT_CONTROL_CONFIG_TAMPERED');
+  return true;
 }
 export function seedLocalGitWorkspace(source, workspace) {
   if (!source || source.kind !== 'local_git' || typeof source.path !== 'string' || !path.isAbsolute(source.path)) throw new Error('TASK_SOURCE_INVALID');
@@ -465,8 +481,19 @@ export function ensureGitRepo(repo) {
   return repo;
 }
 export function changedWorkspacePaths(repo) {
-  const raw = gitExec(repo, ['status','--porcelain=v1','--untracked-files=all'], { trim: false });
-  return raw ? raw.split(/\r?\n/).filter(Boolean).map(line => line.slice(3).replace(/^"|"$/g, '')) : [];
+  const raw = gitExec(repo, ['status','--porcelain=v1','-z','--untracked-files=all'], { trim: false });
+  if (!raw) return [];
+  const records = raw.split('\0');
+  const paths = [];
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    if (!record) continue;
+    if (record.length < 4 || record[2] !== ' ') throw new Error('GIT_STATUS_PARSE_ERROR');
+    const status = record.slice(0, 2);
+    paths.push(record.slice(3));
+    if (/[RC]/.test(status) && records[index + 1]) paths.push(records[++index]);
+  }
+  return [...new Set(paths)];
 }
 function assertWorkspacePathSafe(repo, relativePath) {
   const root = fs.realpathSync(repo); let current = root;
@@ -575,6 +602,11 @@ export function verifyAuthorizationReceipt(receipt, publicKeyPem) {
   assertSchemaVersion('authorization_receipt', receipt?.schema_version);
   if (!receipt?.controller_signature || !publicKeyPem) throw new Error('AUTHORIZATION_RECEIPT_SIGNATURE_REQUIRED');
   if (receipt.controller_key_fingerprint !== publicKeyFingerprint(publicKeyPem)) throw new Error('AUTHORIZATION_RECEIPT_KEY_FINGERPRINT_MISMATCH');
+  if (receipt.expires_at !== undefined) {
+    const issued = Date.parse(receipt.issued_at); const expires = Date.parse(receipt.expires_at);
+    if (!Number.isFinite(issued) || !Number.isFinite(expires) || expires <= issued) throw new Error('AUTHORIZATION_RECEIPT_EXPIRY_INVALID');
+    if (Date.now() >= expires) throw new Error('AUTHORIZATION_RECEIPT_EXPIRED');
+  }
   const ok = crypto.verify(null, Buffer.from(canonicalAuthorizationReceipt(receipt)), publicKeyPem, Buffer.from(receipt.controller_signature, 'base64'));
   if (!ok) throw new Error('AUTHORIZATION_RECEIPT_SIGNATURE_INVALID');
   return true;
@@ -640,6 +672,19 @@ export function createHumanApproval(state, signatureBase64) {
   return { schema_version: DATA_SCHEMA_VERSIONS.human_approval, challenge: state.gate_challenge, signature: signatureBase64, decision: 'ACCEPT', decision_identity: policy.identity, public_key_fingerprint: policy.fingerprint,
     signed_payload_hash: challengeHash(state.gate_challenge, policy.identity), approved_at: new Date().toISOString() };
 }
+export function approvalExpiresAt(state) {
+  const seconds = Number(process.env.BOUNDED_AGENT_APPROVAL_MAX_AGE_SECONDS ?? 86400);
+  if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 2592000) throw new Error('APPROVAL_MAX_AGE_INVALID');
+  const proof = [...(state.evidence ?? [])].reverse().find(item => item.claim === 'human_approval');
+  if (!proof) throw new Error('REQUIRED_EVIDENCE_MISSING:human_approval');
+  verifyEvidence(proof, state);
+  return new Date(Date.parse(proof.created_at) + seconds * 1000).toISOString();
+}
+export function assertApprovalFresh(state) {
+  const expiresAt = approvalExpiresAt(state);
+  if (Date.now() >= Date.parse(expiresAt)) throw new Error('HUMAN_APPROVAL_EXPIRED');
+  return expiresAt;
+}
 export function assertHumanApproval(state, action) {
   if (!state.task?.allowed_actions?.includes(action)) throw new Error('CAPABILITY_DENIED:' + action);
   if (!state.task?.protected_actions?.includes(action)) throw new Error('PROTECTED_ACTION_NOT_DECLARED:' + action);
@@ -654,6 +699,7 @@ export function assertHumanApproval(state, action) {
   if (JSON.stringify(approval.challenge.protected_actions) !== JSON.stringify(protectedActions)) throw new Error('HUMAN_APPROVAL_ACTION_SCOPE_MISMATCH');
   if (approval.challenge.protected_actions_hash !== protectedActionsHash) throw new Error('HUMAN_APPROVAL_ACTION_SCOPE_MISMATCH');
   if (approval.signed_payload_hash !== challengeHash(approval.challenge, policy.identity)) throw new Error('HUMAN_APPROVAL_HASH_MISMATCH');
+  assertApprovalFresh(state);
   const nonce = assertConsumedNonce(approval.challenge, policy.identity, approval.signature, true);
   if (nonce.status === 'PENDING') commitApprovalNonce(approval.challenge, policy.identity, approval.signature);
   return true;
@@ -666,7 +712,26 @@ export function resetDemoRuntime() {
   return 'DEMO_RUNTIME_RESET';
 }
 
+const REQUIRED_EVIDENCE_BY_STATE = Object.freeze({
+  TESTING: ['builder_candidate'],
+  HANDOFF_VALIDATION: ['builder_candidate', 'controller_verification'],
+  REVIEWING: ['builder_candidate', 'controller_verification'],
+  REVIEW_READY: ['builder_candidate', 'controller_verification', 'review_observation'],
+  HUMAN_GATE: ['builder_candidate', 'controller_verification', 'review_observation'],
+  ACCEPTED: ['builder_candidate', 'controller_verification', 'review_observation', 'human_approval'],
+  CONTROLLER_MUTATION: ['builder_candidate', 'controller_verification', 'review_observation', 'human_approval'],
+  VERIFIED: ['builder_candidate', 'controller_verification', 'review_observation', 'human_approval'],
+  DONE: ['builder_candidate', 'controller_verification', 'review_observation', 'human_approval']
+});
+export function assertRequiredEvidence(state) {
+  const required = REQUIRED_EVIDENCE_BY_STATE[state.state] ?? [];
+  const claims = new Set((state.evidence ?? []).map(item => item.claim));
+  const missing = required.filter(claim => !claims.has(claim));
+  if (missing.length) throw new Error(`REQUIRED_EVIDENCE_MISSING:${missing.join(',')}`);
+  return true;
+}
 export function verifyStateEvidence(state) {
   for (const item of state.evidence ?? []) verifyEvidence(item, state);
+  assertRequiredEvidence(state);
   return true;
 }

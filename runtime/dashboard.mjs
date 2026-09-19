@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import http from 'node:http';
-import { STATE_FILE, readJson } from './core.mjs';
+import { STATE_FILE, loadState } from './core.mjs';
 import { doctorReport } from './doctor.mjs';
 
 const text = value => value === null || value === undefined ? '' : String(value).slice(0, 512);
 
 export function publicStatus() {
   if (!fs.existsSync(STATE_FILE)) return { initialized:false, state:'NOT_INITIALIZED', evidence_count:0, gate_state:'NOT_REQUIRED' };
-  const state = readJson(STATE_FILE);
+  const state = loadState();
   const gateState = state.state === 'HUMAN_GATE' ? 'WAITING' : (state.human_approval ? 'APPROVAL_RECORDED' : 'NOT_REQUIRED');
   return {
     initialized:true,
@@ -25,7 +25,8 @@ export function publicStatus() {
 
 export function publicEvidence() {
   if (!fs.existsSync(STATE_FILE)) return [];
-  const evidence = Array.isArray(readJson(STATE_FILE).evidence) ? readJson(STATE_FILE).evidence : [];
+  const state = loadState();
+  const evidence = Array.isArray(state.evidence) ? state.evidence : [];
   return evidence.map(item => ({
     evidence_id:text(item.evidence_id),
     claim:text(item.claim),

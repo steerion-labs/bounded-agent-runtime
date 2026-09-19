@@ -42,8 +42,8 @@ test('forged ACCEPTED state cannot bypass Human Gate',()=>{
   assert.equal(run(['init',task],cwd,keys.env).status,0); assert.equal(run(['run'],cwd,keys.env).status,0);
   const state=JSON.parse(fs.readFileSync(stateFor(cwd),'utf8')); state.state='ACCEPTED'; state.human_approval=null;
   fs.writeFileSync(stateFor(cwd),JSON.stringify(state,null,2));
-  const auth=run(['authorize-protected','remote_mutation'],cwd,keys.env);
-  assert.notEqual(auth.status,0); assert.match(auth.stderr,/HUMAN_GATE_REQUIRED|RECOVERY_STATE_JOURNAL_MISMATCH/);
+  const auth=run(['authorize-protected','merge'],cwd,keys.env);
+  assert.notEqual(auth.status,0); assert.match(auth.stderr,/HUMAN_GATE_REQUIRED|RECOVERY_STATE_JOURNAL_MISMATCH|REQUIRED_EVIDENCE_MISSING:human_approval/);
 });
 test('approval nonce cannot be replayed after state rollback',()=>{
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-replay-')); const keys=setupKeys(cwd);
@@ -196,7 +196,7 @@ test('protected authorization rejects candidate drift after approval',()=>{
   const state=JSON.parse(fs.readFileSync(stateFor(cwd),'utf8'));
   fs.writeFileSync(path.join(state.workspace_path,'demo-output','artifact.txt'),'tampered after approval\n');
   execFileSync('git',['add','.'],{cwd:state.workspace_path}); execFileSync('git',['commit','-q','-m','tamper'],{cwd:state.workspace_path});
-  const auth=run(['authorize-protected','remote_mutation'],cwd,keys.env);
+  const auth=run(['authorize-protected','merge'],cwd,keys.env);
   assert.notEqual(auth.status,0); assert.match(auth.stderr,/POST_TEST_CANDIDATE_DRIFT|POST_TEST_TREE_DRIFT/);
 });
 test('tampered evidence is rejected before protected authorization',()=>{
@@ -204,7 +204,7 @@ test('tampered evidence is rejected before protected authorization',()=>{
   assert.equal(run(['init',task],cwd,keys.env).status,0); assert.equal(run(['run'],cwd,keys.env).status,0);
   const state=JSON.parse(fs.readFileSync(stateFor(cwd),'utf8'));
   state.evidence[0].claim='tampered'; fs.writeFileSync(stateFor(cwd),JSON.stringify(state,null,2));
-  const auth=run(['authorize-protected','remote_mutation'],cwd,keys.env);
+  const auth=run(['authorize-protected','merge'],cwd,keys.env);
   assert.notEqual(auth.status,0); assert.match(auth.stderr,/EVIDENCE_INTEGRITY_INVALID/);
 });
 test('hostile global Git hooks are not executed by controller Git commands',()=>{
@@ -339,7 +339,7 @@ test('protected authorization rejects uncommitted worktree drift after approval'
   assert.equal(signed.status,0,signed.stderr); assert.equal(run(['approve',signed.stdout.trim()],cwd,keys.env).status,0);
   const state=JSON.parse(fs.readFileSync(stateFor(cwd),'utf8'));
   fs.writeFileSync(path.join(state.workspace_path,'demo-output','artifact.txt'),'dirty but same HEAD\n');
-  const auth=run(['authorize-protected','remote_mutation'],cwd,keys.env);
+  const auth=run(['authorize-protected','merge'],cwd,keys.env);
   assert.notEqual(auth.status,0); assert.match(auth.stderr,/POST_TEST_WORKTREE_DIRTY/);
 });
 
@@ -362,4 +362,47 @@ test('controller lock serializes concurrent controllers and allows dead-owner ta
   const blocked=run(['recover'],cwd,env); assert.notEqual(blocked.status,0); assert.match(blocked.stderr,/CONTROLLER_LOCKED/);
   holder.kill(); await new Promise(resolve=>holder.once('exit',resolve));
   const takeover=run(['recover'],cwd,env); assert.equal(takeover.status,0,takeover.stderr); assert.match(takeover.stdout,/SAFE_RESUME/);
+});
+
+test('builder Git config tampering is rejected before controller Git execution',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-git-config-tamper-')); const source=makeSourceRepo();
+  const worker=path.join(cwd,'worker.mjs'); fs.writeFileSync(worker,"import fs from 'node:fs';fs.writeFileSync('src/value.txt','after\\n');fs.appendFileSync('.git/config','\\n[core]\\n\\tfsmonitor = malicious-command\\n');console.log('changed');");
+  const spec=realTask(source); const localTask=path.join(cwd,'task.json'); fs.writeFileSync(localTask,JSON.stringify(spec,null,2));
+  const env=baseEnv(cwd,{BOUNDED_AGENT_GENERIC_EXECUTABLE:process.execPath,BOUNDED_AGENT_GENERIC_ARGS_JSON:JSON.stringify([worker])});
+  assert.equal(run(['init',localTask],cwd,env).status,0); const result=run(['run'],cwd,env);
+  assert.notEqual(result.status,0); assert.match(result.stderr,/GIT_CONTROL_CONFIG_TAMPERED/);
+});
+
+test('reviewer must attest the exact candidate instead of relying on adapter injection',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-review-binding-')); const source=makeSourceRepo();
+  const worker=path.join(cwd,'worker.mjs'); fs.writeFileSync(worker,"import fs from 'node:fs';const p=process.argv.at(-1)||'';if(p.includes('You are the Reviewer'))console.log(JSON.stringify({decision:'APPROVE',reason:'wrong binding',residual_risks:[],reviewed_candidate_sha:'deadbeef',reviewed_tree_hash:'deadbeef'}));else{fs.writeFileSync('src/value.txt','after\\n');console.log('changed');}");
+  const spec=realTask(source,'generic','generic'); const localTask=path.join(cwd,'task.json'); fs.writeFileSync(localTask,JSON.stringify(spec,null,2));
+  const env=baseEnv(cwd,{BOUNDED_AGENT_GENERIC_EXECUTABLE:process.execPath,BOUNDED_AGENT_GENERIC_ARGS_JSON:JSON.stringify([worker])});
+  assert.equal(run(['init',localTask],cwd,env).status,0); const result=run(['run'],cwd,env);
+  assert.notEqual(result.status,0); assert.match(result.stderr,/REVIEW_BINDING_MISMATCH/);
+});
+
+test('protected authorization requires the complete evidence set',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-evidence-required-')); const keys=setupKeys(cwd);
+  assert.equal(run(['init',task],cwd,keys.env).status,0); assert.equal(run(['run'],cwd,keys.env).status,0);
+  const signed=spawnSync(process.execPath,[gate,'sign',path.join(keys.keyDir,'private.pem')],{cwd,encoding:'utf8',env:keys.env}); assert.equal(signed.status,0,signed.stderr); assert.equal(run(['approve',signed.stdout.trim()],cwd,keys.env).status,0);
+  const state=JSON.parse(fs.readFileSync(stateFor(cwd),'utf8')); state.evidence=state.evidence.filter(item=>item.claim!=='review_observation'); fs.writeFileSync(stateFor(cwd),JSON.stringify(state,null,2)+'\n');
+  const result=run(['verify-authorization','merge','--json'],cwd,keys.env); assert.equal(result.status,2); assert.match(result.stdout,/REQUIRED_EVIDENCE_MISSING/);
+});
+
+test('human approval expires before new authorization receipts can be minted',async()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-approval-expiry-')); const keys=setupKeys(cwd); const env={...keys.env,BOUNDED_AGENT_APPROVAL_MAX_AGE_SECONDS:'1'};
+  assert.equal(run(['init',task],cwd,env).status,0); assert.equal(run(['run'],cwd,env).status,0);
+  const signed=spawnSync(process.execPath,[gate,'sign',path.join(keys.keyDir,'private.pem')],{cwd,encoding:'utf8',env}); assert.equal(signed.status,0,signed.stderr); assert.equal(run(['approve',signed.stdout.trim()],cwd,env).status,0);
+  await new Promise(resolve=>setTimeout(resolve,1100));
+  const result=run(['authorize-protected','merge','--json'],cwd,env); assert.equal(result.status,2); assert.match(result.stdout,/HUMAN_APPROVAL_EXPIRED/);
+});
+
+test('generic local workers receive an isolated profile by default',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-isolated-profile-')); const source=makeSourceRepo();
+  const worker=path.join(cwd,'worker.mjs'); fs.writeFileSync(worker,"import fs from 'node:fs';fs.writeFileSync('src/value.txt','after\\n');fs.writeFileSync('src/profile.txt',String(process.env.HOME||process.env.USERPROFILE||''));console.log('changed');");
+  const spec=realTask(source); const localTask=path.join(cwd,'task.json'); fs.writeFileSync(localTask,JSON.stringify(spec,null,2));
+  const env=baseEnv(cwd,{BOUNDED_AGENT_GENERIC_EXECUTABLE:process.execPath,BOUNDED_AGENT_GENERIC_ARGS_JSON:JSON.stringify([worker]),HOME:path.join(cwd,'operator-home'),USERPROFILE:path.join(cwd,'operator-home')});
+  assert.equal(run(['init',localTask],cwd,env).status,0); const result=run(['run'],cwd,env); assert.equal(result.status,0,result.stderr);
+  const state=JSON.parse(fs.readFileSync(stateFor(cwd),'utf8')); const observed=fs.readFileSync(path.join(state.workspace_path,'src','profile.txt'),'utf8'); assert.notEqual(path.normalize(observed),path.normalize(env.HOME)); assert.match(observed,/worker-profiles/i);
 });

@@ -6,7 +6,6 @@ export function buildAgentInvocation({adapter,role,task,workspace,prompt,generic
     return {command:'claude',args:['-p','--safe-mode','--no-session-persistence','--output-format','text','--permission-mode',role==='builder'?'acceptEdits':'plan','--disable-slash-commands','--strict-mcp-config','--tools',tools,...(config.model?['--model',config.model]:[])],input:prompt};
   }
   if(adapter==='opencode') return {command:'opencode',args:['run','--pure','--dir',workspace,...(config.model?['--model',config.model]:[]),prompt]};
-  if(adapter==='prime-agent') throw new Error('PRIME_AGENT_EXECUTION_ISOLATION_REQUIRED');
   if(adapter==='ollama') {
     if(role!=='reviewer') throw new Error('ADAPTER_ROLE_UNSUPPORTED:ollama:builder');
     if(!config.model) throw new Error('OLLAMA_MODEL_REQUIRED');
@@ -26,7 +25,7 @@ export function parseReviewOutput(text) {
   for(const value of candidates){
     try{
       const parsed=JSON.parse(value); if(!['APPROVE','BLOCK'].includes(parsed.decision))continue;
-      return {decision:parsed.decision,reason:typeof parsed.reason==='string'?parsed.reason:'',residual_risks:Array.isArray(parsed.residual_risks)?parsed.residual_risks.map(String).slice(0,20):[]};
+      return {decision:parsed.decision,reason:typeof parsed.reason==='string'?parsed.reason:'',residual_risks:Array.isArray(parsed.residual_risks)?parsed.residual_risks.map(String).slice(0,20):[],reviewed_candidate_sha:typeof parsed.reviewed_candidate_sha==='string'?parsed.reviewed_candidate_sha:'',reviewed_tree_hash:typeof parsed.reviewed_tree_hash==='string'?parsed.reviewed_tree_hash:''};
     }catch{}
   }
   throw new Error('REVIEWER_INVALID_JSON');

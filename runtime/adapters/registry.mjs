@@ -6,7 +6,6 @@ const definitions = Object.freeze({
   codex: { roles: ['builder', 'reviewer'], executable: 'codex', boundary: 'workspace-write builder / read-only reviewer' },
   claude: { roles: ['builder', 'reviewer'], executable: 'claude', boundary: 'edit-only builder / plan+read reviewer' },
   opencode: { roles: ['builder', 'reviewer'], executable: 'opencode', boundary: 'pure mode; BAR verifies workspace/candidate' },
-  'prime-agent': { roles: [], executable: 'prime-agent', boundary: 'POC contract only; execution disabled until enforced network-none and filesystem isolation exist' },
   ollama: { roles: ['reviewer'], executable: 'ollama', boundary: 'reviewer only' },
   container: { roles: ['builder', 'reviewer'], executable: 'docker', boundary: 'disposable network-none container' },
   generic: { roles: ['builder', 'reviewer'], executable: null, boundary: 'operator-supplied; controller checks remain mandatory' }
@@ -29,6 +28,7 @@ export function selectAvailableAdapter(role, agents) {
     const agent = agents?.[name];
     if (!agent?.installed || !definitions[name]?.roles.includes(role)) return false;
     if (['codex','claude','opencode'].includes(name) && agent.authenticated !== true) return false;
+    if (['codex','claude','opencode'].includes(name) && process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE !== 'inherit') return false;
     if (role === 'builder' && agent.safe_for_builder === false) return false;
     if (name === 'container' && agent[`configured_for_${role}`] !== true) return false;
     return true;

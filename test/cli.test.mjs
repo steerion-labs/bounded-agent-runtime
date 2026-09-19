@@ -132,27 +132,46 @@ test('launcher failures preserve actionable OS error details', async()=>{
 
 test('auto adapter selection is deterministic and role-aware',async()=>{
   const { selectAvailableAdapter } = await import('../runtime/adapters/registry.mjs');
-  const agents={codex:{installed:false},claude:{installed:true,authenticated:true},opencode:{installed:true,authenticated:true},ollama:{installed:true},container:{installed:false},generic:{installed:false}};
-  assert.equal(selectAvailableAdapter('builder',agents),'claude');
-  assert.equal(selectAvailableAdapter('reviewer',agents),'claude');
-  const reviewerOnly={...agents,claude:{installed:false},opencode:{installed:false}};
-  assert.equal(selectAvailableAdapter('reviewer',reviewerOnly),'ollama');
-  assert.throws(()=>selectAvailableAdapter('builder',reviewerOnly),/AUTO_ADAPTER_UNAVAILABLE:builder/);
+  const prior=process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE; process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE='inherit';
+  try {
+    const agents={codex:{installed:false},claude:{installed:true,authenticated:true},opencode:{installed:true,authenticated:true},ollama:{installed:true},container:{installed:false},generic:{installed:false}};
+    assert.equal(selectAvailableAdapter('builder',agents),'claude');
+    assert.equal(selectAvailableAdapter('reviewer',agents),'claude');
+    const reviewerOnly={...agents,claude:{installed:false},opencode:{installed:false}};
+    assert.equal(selectAvailableAdapter('reviewer',reviewerOnly),'ollama');
+    assert.throws(()=>selectAvailableAdapter('builder',reviewerOnly),/AUTO_ADAPTER_UNAVAILABLE:builder/);
+  } finally { if(prior===undefined) delete process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE; else process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE=prior; }
 });
 
 test('auto adapter selection skips unauthenticated or unsafe builders',async()=>{
   const { selectAvailableAdapter } = await import('../runtime/adapters/registry.mjs');
-  const agents={codex:{installed:true,authenticated:true,safe_for_builder:false},claude:{installed:true,authenticated:false},opencode:{installed:true,authenticated:true},container:{installed:false},generic:{installed:false}};
-  assert.equal(selectAvailableAdapter('builder',agents),'opencode');
-  assert.equal(selectAvailableAdapter('reviewer',agents),'codex');
+  const prior=process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE; process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE='inherit';
+  try {
+    const agents={codex:{installed:true,authenticated:true,safe_for_builder:false},claude:{installed:true,authenticated:false},opencode:{installed:true,authenticated:true},container:{installed:false},generic:{installed:false}};
+    assert.equal(selectAvailableAdapter('builder',agents),'opencode');
+    assert.equal(selectAvailableAdapter('reviewer',agents),'codex');
+  } finally { if(prior===undefined) delete process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE; else process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE=prior; }
 });
 
 test('auto selection requires explicit auth readiness for remote agent CLIs',async()=>{
   const { selectAvailableAdapter } = await import('../runtime/adapters/registry.mjs');
-  const agents={codex:{installed:true},claude:{installed:true},opencode:{installed:true},ollama:{installed:true},container:{installed:false},generic:{installed:false}};
-  assert.equal(selectAvailableAdapter('reviewer',agents),'ollama');
-  assert.throws(()=>selectAvailableAdapter('builder',agents),/AUTO_ADAPTER_UNAVAILABLE:builder/);
-  agents.opencode.authenticated=true; assert.equal(selectAvailableAdapter('builder',agents),'opencode');
+  const prior=process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE; process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE='inherit';
+  try {
+    const agents={codex:{installed:true},claude:{installed:true},opencode:{installed:true},ollama:{installed:true},container:{installed:false},generic:{installed:false}};
+    assert.equal(selectAvailableAdapter('reviewer',agents),'ollama');
+    assert.throws(()=>selectAvailableAdapter('builder',agents),/AUTO_ADAPTER_UNAVAILABLE:builder/);
+    agents.opencode.authenticated=true; assert.equal(selectAvailableAdapter('builder',agents),'opencode');
+  } finally { if(prior===undefined) delete process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE; else process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE=prior; }
+});
+
+test('auto selection does not inherit local operator profiles without explicit opt-in',async()=>{
+  const { selectAvailableAdapter } = await import('../runtime/adapters/registry.mjs');
+  const prior=process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE; delete process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE;
+  try {
+    const agents={codex:{installed:false},claude:{installed:true,authenticated:true},opencode:{installed:true,authenticated:true},ollama:{installed:false},container:{installed:false},generic:{installed:false}};
+    assert.throws(()=>selectAvailableAdapter('builder',agents),/AUTO_ADAPTER_UNAVAILABLE:builder/);
+    assert.throws(()=>selectAvailableAdapter('reviewer',agents),/AUTO_ADAPTER_UNAVAILABLE:reviewer/);
+  } finally { if(prior!==undefined) process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE=prior; }
 });
 
 test('Codex builder user extensions fail closed without task opt-in',async()=>{

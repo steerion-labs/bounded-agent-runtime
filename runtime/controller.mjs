@@ -3,11 +3,11 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
-  STATE_FILE, BUILDER_DIR, REVIEWER_DIR, VERIFICATION_DIR, ensureRuntimeDir, assertProtectedRootConfigured,
+  STATE_FILE, CORE_DIR, BUILDER_DIR, REVIEWER_DIR, VERIFICATION_DIR, ensureRuntimeDir, assertProtectedRootConfigured,
   loadState, saveState, journal, transition, newLease, assertCurrentLease, assertCurrentFence, acquireControllerLock, releaseControllerLock, cleanupControllerHooks, claimControllerLease, sha256,
   validateTask, authorize, assertWorkerExecutionBoundary, assertVerificationExecutionBoundary, spendBudget, remainingWallClockMs, evidence, verifyEvidence, verifyStateEvidence,
-  ensureGitRepo, seedLocalGitWorkspace, cloneReviewerWorkspace, cloneCandidateWorkspace, commitWorkspace, assertWorkspaceIdentity, assertWorkspaceScope, changedWorkspacePaths, gitExec,
-  createGateChallenge, createHumanApproval, assertHumanApproval, signAuthorizationReceipt, authorizationReceiptPublicKey, recoverState,
+  ensureGitRepo, seedLocalGitWorkspace, cloneReviewerWorkspace, cloneCandidateWorkspace, commitWorkspace, assertWorkspaceIdentity, assertWorkspaceScope, changedWorkspacePaths, gitExec, captureGitControlState, assertGitControlState,
+  createGateChallenge, createHumanApproval, assertHumanApproval, approvalExpiresAt, signAuthorizationReceipt, authorizationReceiptPublicKey, recoverState,
   readJson, resetDemoRuntime
 } from './core.mjs';
 import { assertAdapterName, resolveAdapter } from './adapters/registry.mjs';
@@ -15,10 +15,18 @@ import { assertAdapterName, resolveAdapter } from './adapters/registry.mjs';
 const command = process.argv[2], arg = process.argv[3];
 const fail = message => { console.error(message); process.exitCode = 1; };
 const adapterPath = name => path.resolve(import.meta.dirname, 'adapters', name);
-function workerEnv() {
+function workerEnv(role) {
   const env = {};
-  for (const key of ['PATH','Path','SystemRoot','WINDIR','TEMP','TMP','TMPDIR','HOME','USERPROFILE','LOCALAPPDATA','APPDATA']) if (process.env[key]) env[key] = process.env[key];
-  return env;
+  for (const key of ['PATH','Path','PATHEXT','SystemRoot','SYSTEMROOT','WINDIR','ComSpec','COMSPEC','TEMP','TMP','TMPDIR']) if (process.env[key]) env[key] = process.env[key];
+  if (process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE === 'inherit') {
+    for (const key of ['HOME','USERPROFILE','LOCALAPPDATA','APPDATA']) if (process.env[key]) env[key] = process.env[key];
+    return env;
+  }
+  const profile = path.join(CORE_DIR, 'worker-profiles', role);
+  const localAppData = path.join(profile, 'AppData', 'Local');
+  const appData = path.join(profile, 'AppData', 'Roaming');
+  for (const dir of [profile, localAppData, appData]) fs.mkdirSync(dir, { recursive: true });
+  return { ...env, HOME: profile, USERPROFILE: profile, LOCALAPPDATA: localAppData, APPDATA: appData };
 }
 function genericConfig() {
   const executable = process.env.BOUNDED_AGENT_GENERIC_EXECUTABLE;
@@ -32,7 +40,11 @@ function workerName(state, role) {
   const name = state.task.workers?.[role]?.adapter || 'demo';
   return assertAdapterName(name, role);
 }
-function workerConfigHash(state, role) { return sha256(JSON.stringify(state.task.workers?.[role] || { adapter: 'demo' })); }
+function workerConfigHash(state, role) {
+  const worker = state.task.workers?.[role] || { adapter: 'demo' };
+  const runtime = worker.adapter === 'generic' ? genericConfig() : null;
+  return sha256(JSON.stringify({ worker, runtime }));
+}
 function runAdapter(state, adapterName, role, input, label) {
   assertWorkerExecutionBoundary(adapterName, role);
   const file = resolveAdapter(adapterName, role); let lastError;
@@ -41,7 +53,7 @@ function runAdapter(state, adapterName, role, input, label) {
     spendBudget(state, { model_calls: 1 });
     const timeout = Math.min(remainingWallClockMs(state), 120000);
     const payload = { ...input, adapter: adapterName, role, generic: adapterName === 'generic' ? genericConfig() : null, timeout_ms: Math.max(1000, timeout - 500) };
-    const result = spawnSync(process.execPath, [adapterPath(file)], { input: JSON.stringify(payload), encoding: 'utf8', timeout, env: workerEnv(), windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
+    const result = spawnSync(process.execPath, [adapterPath(file)], { input: JSON.stringify(payload), encoding: 'utf8', timeout, env: workerEnv(role), windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
     if (result.status === 0) { try { return JSON.parse(result.stdout); } catch { lastError = new Error(`${label}_INVALID_JSON`); } }
     else if (result.error?.code === 'ETIMEDOUT') lastError = new Error(`${label}_TIMEOUT`);
     else lastError = new Error(`${label}_FAILED:${(result.stderr || '').trim() || result.status}`);
@@ -117,9 +129,11 @@ function run() {
     fs.rmSync(workspace, { recursive: true, force: true }); ensureGitRepo(workspace);
   }
   state.workspace_path = workspace; saveState(state);
+  const builderGitControl = captureGitControlState(workspace);
   const builderAdapter = workerName(state, 'builder');
   const builder = runAdapter(state, builderAdapter, 'builder', { task: state.task, workspace }, 'BUILDER');
   if (builder.status !== 'PASS') throw new Error('BUILDER_REPORTED_FAILURE');
+  assertGitControlState(workspace, builderGitControl);
   const identity = commitWorkspace(workspace, state.task, 'bounded agent candidate', Math.min(remainingWallClockMs(state), 10000));
   state.candidate_sha = identity.candidate_sha; state.tree_hash = identity.tree_hash; saveState(state);
   if (state.base_sha && gitExec(workspace, ['rev-parse','HEAD^']) !== state.base_sha) throw new Error('BASE_PARENT_DRIFT');
@@ -136,12 +150,14 @@ function run() {
   const reviewerWorkspace = path.join(REVIEWER_DIR, state.task_id);
   const reviewerIdentity = cloneReviewerWorkspace(workspace, reviewerWorkspace, state.candidate_sha);
   if (reviewerIdentity.candidate_sha !== state.candidate_sha || reviewerIdentity.tree_hash !== state.tree_hash) throw new Error('REVIEWER_WORKSPACE_BINDING_MISMATCH');
+  const reviewerGitControl = captureGitControlState(reviewerWorkspace);
   state.reviewer_workspace_path = reviewerWorkspace; saveState(state);
   const rawDiff = state.base_sha ? gitExec(workspace, ['diff','--no-ext-diff','--no-renames',`${state.base_sha}..${state.candidate_sha}`], { trim: false }) : gitExec(workspace, ['show','--format=','--no-ext-diff','--no-renames',state.candidate_sha], { trim: false });
   const reviewDiffTruncated = rawDiff.length > 100000; const reviewDiff = rawDiff.slice(0, 100000);
   const reviewerAdapter = workerName(state, 'reviewer');
-  if (reviewerAdapter === 'ollama' && reviewDiffTruncated) throw new Error('REVIEW_DIFF_TOO_LARGE_FOR_OLLAMA');
+  if (reviewDiffTruncated) throw new Error('REVIEW_DIFF_TOO_LARGE_FOR_SINGLE_REVIEW');
   const review = runAdapter(state, reviewerAdapter, 'reviewer', { task: state.task, workspace: reviewerWorkspace, candidate, review_diff: reviewDiff, review_diff_truncated: reviewDiffTruncated }, 'REVIEWER');
+  assertGitControlState(reviewerWorkspace, reviewerGitControl);
   if (changedWorkspacePaths(reviewerWorkspace).length) throw new Error('REVIEWER_MUTATED_WORKSPACE');
   assertWorkspaceIdentity(state, reviewerWorkspace); assertCurrentLease(state); assertWorkspaceIdentity(state, workspace);
   if (review.decision !== 'APPROVE') throw new Error(`REVIEW_BLOCKED:${review.reason ?? 'unknown'}`);
@@ -185,7 +201,7 @@ function verifyProtected(action) {
 }
 function buildAuthorizationReceipt(state, action) {
   const receipt = {
-    schema_version:'bar.authorization-receipt.v3', receipt_id:crypto.randomUUID(), issued_at:new Date().toISOString(),
+    schema_version:'bar.authorization-receipt.v3', receipt_id:crypto.randomUUID(), issued_at:new Date().toISOString(), expires_at:approvalExpiresAt(state),
     task_id:state.task_id, requested_action:action, approval_scope:'declared_protected_actions',
     declared_protected_actions:[...state.task.protected_actions].sort(), candidate_sha:state.candidate_sha, tree_hash:state.tree_hash,
     source_repo_path:state.task.source?.path ?? null, source_remote_url:state.task.source?.remote_url ?? null, source_ref:state.task.source?.ref ?? null, source_head_sha:state.base_sha ?? state.task.source?.ref ?? null,
