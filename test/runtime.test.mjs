@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import {
   DATA_SCHEMA_VERSIONS, assertSchemaVersion, validateStateEnvelope, newLease, assertFreshLease, assertBudget, authorize, assertAllowedPath,
   createGateChallenge, canonicalGatePayload, verifyGateSignature, validateTask, canonicalAuthorizationReceipt, verifyAuthorizationReceipt,
-  ensureGitRepo, commitWorkspace, gitIdentity, assertWorkspaceIdentity, assertWorkerExecutionBoundary, assertVerificationExecutionBoundary
+  ensureGitRepo, seedLocalGitWorkspace, cloneCandidateWorkspace, commitWorkspace, gitIdentity, assertWorkspaceIdentity, assertWorkerExecutionBoundary, assertVerificationExecutionBoundary, captureGitControlState, assertGitControlState
 } from '../runtime/core.mjs';
 import { assertTransition } from '../runtime/state-machine.mjs';
 import { assertAdapterName } from '../runtime/adapters/registry.mjs';
@@ -262,4 +262,48 @@ test('network policy rejects malformed limits and schema instead of failing open
   assert.throws(()=>validateNetworkPolicy({...base,allowed_hosts:['*.com']}),/NETWORK_POLICY_HOSTS_INVALID/);
   assert.throws(()=>validateNetworkPolicy({...base,secret_headers:{'api.example.com':{Host:{secret:'x'}}}}),/NETWORK_POLICY_SECRET_HEADER_INVALID/);
   assert.throws(()=>validateNetworkPolicy({...base,secret_headers:{'api.example.com':{'Content-Length':{secret:'x'}}}}),/NETWORK_POLICY_SECRET_HEADER_INVALID/);
+});
+
+
+function makeGitControlRepo() {
+  const repo=fs.mkdtempSync(path.join(os.tmpdir(),'bar-git-control-'));
+  ensureGitRepo(repo);
+  fs.mkdirSync(path.join(repo,'src')); fs.writeFileSync(path.join(repo,'src','x.txt'),'base\n');
+  execFileSync('git',['add','.'],{cwd:repo}); execFileSync('git',['commit','-q','-m','base'],{cwd:repo});
+  return repo;
+}
+test('seeded builder and candidate workspaces detach all Git remotes', () => {
+  const source=makeGitControlRepo();
+  execFileSync('git',['remote','add','origin','https://example.invalid/source.git'],{cwd:source});
+  const builder=fs.mkdtempSync(path.join(os.tmpdir(),'bar-builder-parent-'))+'-workspace';
+  const sourceHead=execFileSync('git',['rev-parse','HEAD'],{cwd:source,encoding:'utf8'}).trim();
+  seedLocalGitWorkspace({kind:'local_git',path:source,ref:sourceHead},builder);
+  assert.equal(execFileSync('git',['remote'],{cwd:builder,encoding:'utf8'}).trim(),'');
+  const candidate=fs.mkdtempSync(path.join(os.tmpdir(),'bar-candidate-parent-'))+'-workspace';
+  cloneCandidateWorkspace(builder,candidate,sourceHead);
+  assert.equal(execFileSync('git',['remote'],{cwd:candidate,encoding:'utf8'}).trim(),'');
+});
+test('Git control snapshot allows worktree and index edits but rejects branch/tag/stash/reflog control mutations', () => {
+  {
+    const repo=makeGitControlRepo(), snap=captureGitControlState(repo);
+    fs.writeFileSync(path.join(repo,'src','x.txt'),'changed\n'); execFileSync('git',['add','src/x.txt'],{cwd:repo});
+    assert.doesNotThrow(()=>assertGitControlState(repo,snap));
+  }
+  for (const mutate of [
+    repo=>execFileSync('git',['branch','evil'],{cwd:repo}),
+    repo=>execFileSync('git',['tag','evil-tag'],{cwd:repo}),
+    repo=>{fs.writeFileSync(path.join(repo,'src','x.txt'),'stash-me\n');execFileSync('git',['stash','push','-q'],{cwd:repo});},
+    repo=>fs.appendFileSync(path.join(repo,'.git','logs','HEAD'),'tampered-reflog\n')
+  ]) {
+    const repo=makeGitControlRepo(), snap=captureGitControlState(repo);
+    mutate(repo);
+    assert.throws(()=>assertGitControlState(repo,snap),/GIT_CONTROL_STATE_TAMPERED/);
+  }
+});
+test('Git control snapshot detects packed-refs mutation', () => {
+  const repo=makeGitControlRepo();
+  execFileSync('git',['tag','packed-base'],{cwd:repo}); execFileSync('git',['pack-refs','--all'],{cwd:repo});
+  const snap=captureGitControlState(repo);
+  fs.appendFileSync(path.join(repo,'.git','packed-refs'),'# tampered\n');
+  assert.throws(()=>assertGitControlState(repo,snap),/GIT_CONTROL_STATE_TAMPERED:packed-refs/);
 });

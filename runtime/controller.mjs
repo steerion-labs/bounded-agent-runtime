@@ -71,6 +71,7 @@ function runVerification(state, builderWorkspace) {
   const workspace = path.join(VERIFICATION_DIR, state.task_id);
   const identity = cloneCandidateWorkspace(builderWorkspace, workspace, state.candidate_sha);
   if (identity.candidate_sha !== state.candidate_sha || identity.tree_hash !== state.tree_hash) throw new Error('VERIFICATION_WORKSPACE_BINDING_MISMATCH');
+  const verificationGitControl = captureGitControlState(workspace);
   const results = [];
   for (const item of commands) {
     assertCurrentLease(state);
@@ -84,6 +85,7 @@ function runVerification(state, builderWorkspace) {
     results.push(observed);
     if (observed.status !== 0) throw new Error(`VERIFICATION_FAILED:${item.command}:${observed.status}`);
   }
+  assertGitControlState(workspace, verificationGitControl);
   assertWorkspaceIdentity(state, workspace);
   return { workspace, commands_declared: commands.length, results };
 }
