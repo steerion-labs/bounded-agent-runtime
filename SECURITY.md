@@ -18,7 +18,7 @@ BAR separates model reasoning from controller authority. Task policy, candidate 
 
 Model output, repository content, Reviewer prose, MCP/tool output and dashboard content remain untrusted context.
 
-The optional Docker adapter is the currently implemented isolated Builder/Reviewer execution path for protected runtime use. Local Codex/Claude/OpenCode/Generic adapters are same-host child processes and BAR refuses to treat them as protected-mode worker isolation.
+The optional Docker adapter is the currently implemented isolated Builder/Reviewer execution path for protected runtime use. Local Codex/Claude/OpenCode/Generic adapters are same-host child processes and BAR refuses to treat them as protected-mode worker isolation. Local workers receive isolated HOME/AppData profiles by default; inheriting the operator profile requires explicit `BOUNDED_AGENT_LOCAL_PROFILE_MODE=inherit` risk acceptance and still does not create an OS sandbox.
 
 The HTTPS broker is a narrow approved path, not direct-worker egress enforcement. Protected deployments must technically restrict direct worker network access. The Docker adapter uses `--network none`; local CLI adapters inherit the host/network boundary.
 

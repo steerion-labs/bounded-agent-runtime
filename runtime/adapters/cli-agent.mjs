@@ -3,7 +3,6 @@ import { spawnSync } from 'node:child_process';
 import { buildAgentInvocation, parseReviewOutput } from './contracts.mjs';
 import { resolveLaunchCommand, classifyLaunchFailure } from './launcher.mjs';
 import { assertCodexBuilderConfigAllowed } from './codex-policy.mjs';
-import { assertPrimeAgentPocAllowed, primeAgentPocEnv } from './prime-agent-policy.mjs';
 
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 const { adapter, role, task, workspace, candidate, review_diff: reviewDiff = '', generic = null } = input;
@@ -32,12 +31,11 @@ function reviewerPrompt() {
     'Review only. Do not modify files, commit, push, merge, deploy, schedule work, persist goals, install skills, or change permissions.',
     'Look for correctness, security, scope violations, missing tests, and evidence gaps.',
     reviewDiff ? `Candidate diff:\n${reviewDiff}` : 'Inspect the current workspace candidate.',
-    'Return ONLY JSON: {"decision":"APPROVE"|"BLOCK","reason":"...","residual_risks":["..."]}'
+    'Return ONLY JSON: {"decision":"APPROVE"|"BLOCK","reason":"...","residual_risks":["..."],"reviewed_candidate_sha":"<exact candidate SHA above>","reviewed_tree_hash":"<exact tree hash above>"}'
   ].join('\n');
 }
 
 if (adapter === 'codex' && role === 'builder') assertCodexBuilderConfigAllowed(task);
-if (adapter === 'prime-agent') assertPrimeAgentPocAllowed(task, role);
 const prompt = role === 'builder' ? builderPrompt() : reviewerPrompt();
 const call = buildAgentInvocation({adapter,role,task,workspace,prompt,generic});
 const launch = resolveLaunchCommand(call.command, call.args);
@@ -46,7 +44,7 @@ const result = spawnSync(launch.command, launch.args, {
   input: call.input,
   encoding: 'utf8',
   timeout: Math.max(1000, Number(input.timeout_ms) || 30000),
-  env: adapter === 'prime-agent' ? primeAgentPocEnv(process.env, workspace) : process.env,
+  env: process.env,
   windowsHide: true,
   maxBuffer: 4 * 1024 * 1024
 });
@@ -57,5 +55,5 @@ if (role === 'builder') {
   process.stdout.write(JSON.stringify({ status: 'PASS', artifact: `agent:${adapter}`, summary: output.slice(-4000) }));
 } else {
   const review = parseReviewOutput(output);
-  process.stdout.write(JSON.stringify({ ...review, reviewed_candidate_sha: candidate.candidate_sha, reviewed_tree_hash: candidate.tree_hash }));
+  process.stdout.write(JSON.stringify(review));
 }

@@ -128,7 +128,9 @@ BAR deliberately avoids dangerous permission-bypass flags in its primary adapter
 
 BAR is an open-source security runtime, not a certified enterprise security product. The core authority/evidence path is heavily tested, but production assurance still depends on the deployment host, chosen worker boundary and external side-effect adapter.
 
-Local Claude Code, Codex and OpenCode adapters are **process boundaries, not OS sandboxes**. Use the Docker adapter or an independently hardened host/runtime when stronger isolation is required.
+Local Claude Code, Codex and OpenCode adapters are **process boundaries, not OS sandboxes**. BAR gives local workers isolated HOME/AppData profiles by default; using the operator profile requires explicit `BOUNDED_AGENT_LOCAL_PROFILE_MODE=inherit` risk acceptance. This is defense in depth, not an OS boundary. Use the Docker adapter or an independently hardened host/runtime when stronger isolation is required.
+
+Protected mode refuses local verification commands rather than weakening the host boundary. Until a dedicated isolated verifier is configured outside this reference path, protected-mode tasks must not depend on local command verification.
 
 ## Run a real bounded task
 

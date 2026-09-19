@@ -16,7 +16,7 @@ To issue an auditable handoff receipt:
 bar authorize merge --json
 ```
 
-The receipt contains a unique `receipt_id`, `issued_at`, task/candidate/tree identity, requested action, signed approval scope, state/fencing identity, source repo/ref metadata and a controller Ed25519 signature. Receipt issuance is written to the authenticated BAR journal.
+The receipt contains a unique `receipt_id`, `issued_at`, signed `expires_at`, task/candidate/tree identity, requested action, signed approval scope, state/fencing identity, source repo/ref metadata and a controller Ed25519 signature. `bar receipt verify` rejects an expired signed receipt. Receipt issuance is written to the authenticated BAR journal.
 
 The concrete `requested_action` is policy-checked against the human-signed protected-action scope. It is not separately signed by the human. The receipt itself is controller-signed so an external adapter can detect tampering.
 

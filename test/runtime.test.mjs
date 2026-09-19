@@ -97,6 +97,15 @@ test('authorization receipt canonicalization survives key reordering', () => {
   assert.equal(verifyAuthorizationReceipt(reordered,pub),true);
 });
 
+test('authorization receipt verification rejects signed expiry', () => {
+  const {publicKey,privateKey}=crypto.generateKeyPairSync('ed25519');
+  const pub=publicKey.export({type:'spki',format:'pem'});
+  const controller_key_fingerprint=crypto.createHash('sha256').update(crypto.createPublicKey(pub).export({type:'spki',format:'der'})).digest('hex');
+  const base={schema_version:'bar.authorization-receipt.v3',receipt_id:'expired-r1',issued_at:new Date(Date.now()-2000).toISOString(),expires_at:new Date(Date.now()-1000).toISOString(),task_id:'t1',requested_action:'merge',candidate_sha:'abc',tree_hash:'def',controller_key_fingerprint};
+  const controller_signature=crypto.sign(null,Buffer.from(canonicalAuthorizationReceipt(base)),privateKey).toString('base64');
+  assert.throws(()=>verifyAuthorizationReceipt({...base,controller_signature},pub),/AUTHORIZATION_RECEIPT_EXPIRED/);
+});
+
 test('controller-derived Git identity detects drift', () => {
   const repo=fs.mkdtempSync(path.join(os.tmpdir(),'bar-drift-'));
   const task={allowed_paths:['demo-output/']}; ensureGitRepo(repo);

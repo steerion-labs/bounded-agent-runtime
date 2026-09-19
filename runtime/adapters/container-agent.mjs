@@ -36,6 +36,20 @@ function copySeed(source, target) {
   fs.cpSync(source,target,{recursive:true,filter:src=>path.basename(src)!=='.git'});
   makeSeedWritable(target);
 }
+function assertCopyTreeSafe(root) {
+  const visit = current => {
+    const stat = fs.lstatSync(current);
+    if (stat.isSymbolicLink()) throw new Error('CONTAINER_COPYBACK_SYMLINK_DENIED');
+    if (stat.isFile()) {
+      if (stat.nlink > 1) throw new Error('CONTAINER_COPYBACK_HARDLINK_DENIED');
+      return;
+    }
+    if (!stat.isDirectory()) throw new Error('CONTAINER_COPYBACK_SPECIAL_FILE_DENIED');
+    for (const name of fs.readdirSync(current)) visit(path.join(current, name));
+  };
+  if (fs.existsSync(root)) visit(root);
+  return true;
+}
 function prompt() {
   if (role === 'builder') return [
     'You are the Builder inside Bounded Agent Runtime.',
@@ -52,14 +66,14 @@ function prompt() {
     `Candidate tree: ${candidate?.tree_hash || 'unknown'}`,
     reviewDiff ? `Candidate diff:\n${reviewDiff}` : 'Inspect /workspace.',
     'You receive a disposable container copy with no network access. Changes are never copied back to the host candidate.',
-    'Return ONLY JSON: {"decision":"APPROVE"|"BLOCK","reason":"...","residual_risks":["..."]}'
+    'Return ONLY JSON: {"decision":"APPROVE"|"BLOCK","reason":"...","residual_risks":["..."],"reviewed_candidate_sha":"<exact candidate SHA above>","reviewed_tree_hash":"<exact tree hash above>"}'
   ].join('\n');
 }
 
 function parseReview(text) {
   const trimmed=String(text||'').trim(); const candidates=[trimmed];
   for(let index=trimmed.lastIndexOf('{');index>=0;){candidates.push(trimmed.slice(index));if(index===0)break;index=trimmed.lastIndexOf('{',index-1);}
-  for(const value of candidates){try{const parsed=JSON.parse(value);if(['APPROVE','BLOCK'].includes(parsed.decision))return {decision:parsed.decision,reason:String(parsed.reason||''),residual_risks:Array.isArray(parsed.residual_risks)?parsed.residual_risks.map(String).slice(0,20):[]};}catch{}}
+  for(const value of candidates){try{const parsed=JSON.parse(value);if(['APPROVE','BLOCK'].includes(parsed.decision))return {decision:parsed.decision,reason:String(parsed.reason||''),residual_risks:Array.isArray(parsed.residual_risks)?parsed.residual_risks.map(String).slice(0,20):[],reviewed_candidate_sha:typeof parsed.reviewed_candidate_sha==='string'?parsed.reviewed_candidate_sha:'',reviewed_tree_hash:typeof parsed.reviewed_tree_hash==='string'?parsed.reviewed_tree_hash:''};}catch{}}
   throw new Error('CONTAINER_REVIEWER_INVALID_JSON');
 }
 const id=`bar-${crypto.randomUUID()}`;
@@ -79,10 +93,10 @@ try {
   const text=String(started.stdout||'').trim();
   if(role==='builder') {
     const copiedOut=docker(['cp',`${id}:/workspace/.`,output]); if(copiedOut.status!==0)throw new Error('CONTAINER_OUTPUT_COPY_FAILED');
-    for(const allowed of task.allowed_paths){const rel=allowed.replaceAll('\\','/').replace(/^\.\//,'').replace(/\/$/,'');const src=path.join(output,...rel.split('/'));const dst=path.join(workspace,...rel.split('/'));fs.rmSync(dst,{recursive:true,force:true});if(fs.existsSync(src)){fs.mkdirSync(path.dirname(dst),{recursive:true});fs.cpSync(src,dst,{recursive:true});}}
+    for(const allowed of task.allowed_paths){const rel=allowed.replaceAll('\\','/').replace(/^\.\//,'').replace(/\/$/,'');const src=path.join(output,...rel.split('/'));const dst=path.join(workspace,...rel.split('/'));if(fs.existsSync(src))assertCopyTreeSafe(src);fs.rmSync(dst,{recursive:true,force:true});if(fs.existsSync(src)){fs.mkdirSync(path.dirname(dst),{recursive:true});fs.cpSync(src,dst,{recursive:true,dereference:false});}}
     process.stdout.write(JSON.stringify({status:'PASS',artifact:`container:${config.image}`,summary:text.slice(-4000)}));
   } else {
-    const parsed=parseReview(text); process.stdout.write(JSON.stringify({...parsed,reviewed_candidate_sha:candidate.candidate_sha,reviewed_tree_hash:candidate.tree_hash}));
+    const parsed=parseReview(text); process.stdout.write(JSON.stringify(parsed));
   }
 } finally {
   if(created)docker(['rm','-f',id]);

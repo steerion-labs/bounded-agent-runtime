@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { resolveLaunchCommand } from './launcher.mjs';
 
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 const { workspace, command, args = [], timeout_ms: timeoutMs = 120000 } = input;
@@ -8,7 +9,8 @@ if (!workspace || typeof command !== 'string' || !command || !Array.isArray(args
 const env = {};
 for (const key of ['PATH','Path','SystemRoot','WINDIR','TEMP','TMP','ComSpec']) if (process.env[key]) env[key] = process.env[key];
 const started = Date.now();
-const result = spawnSync(command, args, {
+const launch = resolveLaunchCommand(command, args);
+const result = spawnSync(launch.command, launch.args, {
   cwd: workspace,
   encoding: 'utf8',
   timeout: Math.max(1000, Number(timeoutMs) || 120000),

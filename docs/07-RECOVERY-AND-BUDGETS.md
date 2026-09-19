@@ -41,3 +41,8 @@ Worker adapter processes and controller Git commands receive finite timeouts der
 Mutating controller commands acquire an atomic controller-owned lock under `runtime-core` before reading/mutating runtime state. A live owner blocks concurrent controllers. A dead owner can be taken over, after which the controller claims a fresh monotonic lease generation and fencing token.
 
 The lock serializes runtime state, journal, approval/nonce and protected-authorization mutations on one host. It is not a distributed lock; a multi-host deployment requires a durable compare-and-swap/lease service with equivalent fencing semantics.
+## Interrupted worker stages
+
+BAR can repair a single journal/state write skew, but it does not silently resume a Builder, verifier or Reviewer stage after a process crash. Intermediate workflow states fail closed with `SAFE_RESUME_REQUIRED`.
+
+In demo mode, reset and re-run from a fresh task. In protected mode, preserve the runtime root and evidence and use an operator-reviewed recovery procedure rather than resetting security state.

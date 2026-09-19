@@ -142,7 +142,8 @@ function nextStepFor(state) {
   if (state === 'HUMAN_GATE') return 'Review the evidence. Sign and approve only if this exact candidate is acceptable.';
   if (state === 'ACCEPTED') return 'Approval remains candidate-bound. Re-check with `bar verify-authorization <action>` immediately before effect, then use `bar authorize <action>` to issue a signed receipt.';
   if (['REJECTED','FAILED'].includes(state)) return 'Inspect evidence, fix the source/task, then `bar reset` before retrying.';
-  return 'Run `bar run` to continue the bounded workflow, or `bar recover` after an interrupted controller.';
+  if (['CLASSIFIED','CONTEXT_READY','AUTHORIZED','BUILDING','TESTING','HANDOFF_VALIDATION','REVIEWING','REVIEW_READY'].includes(state)) return 'Interrupted stage detected. `bar recover` only repairs a journal/state write skew; BAR does not silently resume worker stages. In demo mode reset and re-run from a fresh task; in protected mode preserve evidence and follow the documented recovery procedure.';
+  return 'Run `bar run` only from NEW, or `bar recover` after a controller state-write interruption.';
 }
 function showStatus(asJson = false) {
   if (!fs.existsSync(STATE_FILE)) {

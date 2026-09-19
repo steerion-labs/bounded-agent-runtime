@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import readline from 'node:readline';
 import { doctorReport } from './doctor.mjs';
 import { publicStatus, publicEvidence } from './dashboard.mjs';
@@ -5,6 +6,7 @@ import { publicStatus, publicEvidence } from './dashboard.mjs';
 export const MCP_PROTOCOL_VERSION = '2026-07-28';
 export const MCP_LEGACY_VERSION = '2025-11-25';
 const PROTOCOL_META = 'io.modelcontextprotocol/protocolVersion';
+const PRODUCT_VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 const tools = [
   { name: 'bounded_status', description: 'Read sanitized controller-derived runtime status. Never mutates runtime state.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
@@ -27,12 +29,12 @@ export function handleMcpRequest(request) {
   const modern = modernRequest(request);
   if (method === 'server/discover') return result(id, cached({
     protocolVersions: [MCP_PROTOCOL_VERSION, MCP_LEGACY_VERSION],
-    serverInfo: { name: 'bounded-agent-runtime', version: '0.3.0' },
+    serverInfo: { name: 'bounded-agent-runtime', version: PRODUCT_VERSION },
     capabilities: { tools: {} }
   }, true, 3000));
   if (method === 'initialize') return result(id, {
     protocolVersion: MCP_LEGACY_VERSION,
-    serverInfo: { name: 'bounded-agent-runtime', version: '0.3.0' },
+    serverInfo: { name: 'bounded-agent-runtime', version: PRODUCT_VERSION },
     capabilities: { tools: {} }
   });
   if (method === 'notifications/initialized') return null;
