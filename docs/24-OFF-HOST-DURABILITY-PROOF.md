@@ -13,10 +13,24 @@ The workflow uses repository read permission only. Checkout credentials are not 
 
 ## Core proof
 
-Each Linux/Windows proof binds the exact checkout HEAD and proves selected high-value controls:
+Each proof binds the exact checkout HEAD.
 
+### Windows hourly boundary proof
+
+Windows proves the fast deterministic boundary layer:
+
+- Human Gate routing policy;
+- protected-but-disallowed actions fail before the gate;
 - expired leases fail closed;
 - fencing mismatches fail closed;
+- gate signatures bind exact candidate identity;
+- expired authorization receipts are rejected;
+- the source checkout remains clean.
+
+### Linux hourly recovery/E2E proof
+
+Linux proves the same boundary layer plus the integration path:
+
 - Human Gate is reached on the synthetic end-to-end path;
 - a forged accepted state cannot bypass the Human Gate;
 - approval nonce replay is rejected;
@@ -26,7 +40,7 @@ Each Linux/Windows proof binds the exact checkout HEAD and proves selected high-
 - BAR quickstart ends at `4/4 PASS: HUMAN_GATE_REQUIRED`;
 - the source checkout remains clean.
 
-The machine-readable `bar.durability-proof.v1` evidence and compact log are retained as GitHub Actions artifacts for seven days.
+The machine-readable `bar.durability-proof.v1` evidence and compact log are retained as GitHub Actions artifacts for seven days. FAIL runs also persist a fail-closed proof artifact with the exact checkout HEAD and error instead of disappearing without evidence.
 
 ## Container proof
 
