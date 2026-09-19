@@ -10,8 +10,28 @@ const out=path.resolve(option('--out',path.join('.bar-proof','durability-proof.j
 const root=path.resolve('.');
 const log=[];
 
+process.on('uncaughtException',(error)=>{
+  try{
+    fs.mkdirSync(path.dirname(out),{recursive:true});
+    fs.writeFileSync(out,JSON.stringify({
+      schemaVersion:'bar.durability-proof.v1',
+      status:'FAIL',
+      generatedAt:new Date().toISOString(),
+      sourceHead:String(spawnSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8',windowsHide:true}).stdout||'').trim()||null,
+      runner:{os:process.platform,node:process.version,githubHosted:Boolean(process.env.GITHUB_ACTIONS)},
+      error:String(error?.message||error),
+      protectedRemoteMutationAttempted:false,
+      secretsRequired:false
+    },null,2)+'\n');
+    fs.writeFileSync(path.join(path.dirname(out),'durability-proof.log'),log.join('\n'));
+  }catch{}
+  console.error('BAR_DURABILITY_PROOF=FAIL',error?.message||error);
+  process.exitCode=1;
+});
+
 function run(label,command,argv,{expect=null}={}){
   const result=spawnSync(command,argv,{cwd:root,encoding:'utf8',windowsHide:true,env:{...process.env},timeout:120000});
+  if(result.error) throw new Error(label+':spawn='+String(result.error.code||result.error.message));
   const stdout=String(result.stdout||'');
   const stderr=String(result.stderr||'');
   log.push('## '+label+'\n$ '+command+' '+argv.join(' ')+'\n'+stdout+stderr+'\n');
