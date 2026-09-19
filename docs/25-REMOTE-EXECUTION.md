@@ -22,7 +22,7 @@ runtime/remote/contracts.mjs defines two versioned envelopes.
 - bar.remote-task.v1 binds task hash, exact source HEAD, expected provider identity, allowed remote actions, protected actions, worker identity/capability hash, lease generation/fence, isolation, network policy and optional expected candidate.
 - bar.remote-result.v1 binds the dispatch hash, provider/run identity, authority hash, worker, lease/fence, candidate SHA/tree and evidence hash.
 
-The controller or consuming private system must compare the returned result against the current lease/fence and the actual candidate/evidence before accepting it. A remote provider never receives authority merely because it returns PASS.
+The controller or consuming private system must compare the returned result against the current lease/fence and the actual candidate/evidence before accepting it. Result verification also requires a replay ledger; verification fails closed if no ledger is supplied. A remote provider never receives authority merely because it returns PASS.
 
 ## Provider interface
 
