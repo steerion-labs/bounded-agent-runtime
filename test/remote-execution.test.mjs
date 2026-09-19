@@ -32,6 +32,7 @@ test('remote dispatch binds authority, worker and fence',()=>{
   const {dispatch}=fixture();
   assert.equal(validateRemoteDispatch(dispatch),true);
   assert.equal(dispatch.sourceHead,head);
+  assert.match(dispatch.dispatchHash,/^[a-f0-9]{64}$/);
   assert.equal(dispatch.authority.remoteActions.includes('merge'),false);
   assert.equal(dispatch.worker.identity,'worker:test');
   assert.equal(dispatch.lease.generation,7);
@@ -81,4 +82,27 @@ test('remote action aliases and missing replay ledger fail closed',()=>{
   const {lease,dispatch}=fixture({candidateSha:head,treeHash:tree});
   const result=createRemoteResult({dispatch,providerId:'test',providerRunId:'run-ledger',candidateSha:head,treeHash:tree,evidence:[{status:'PASS'}]});
   assert.throws(()=>verifyRemoteResult({dispatch,result,currentLease:lease}),/REMOTE_REPLAY_LEDGER_REQUIRED/);
+});
+
+
+test('remote dispatch is deeply immutable and hash-bound',()=>{
+  const {dispatch}=fixture();
+  assert.equal(Object.isFrozen(dispatch),true);
+  assert.equal(Object.isFrozen(dispatch.authority),true);
+  assert.equal(Object.isFrozen(dispatch.authority.remoteActions),true);
+  assert.equal(Object.isFrozen(dispatch.worker),true);
+  assert.equal(Object.isFrozen(dispatch.lease),true);
+  assert.throws(()=>{ dispatch.worker.identity='attacker'; },/read only|Cannot assign|object is not extensible/i);
+  const wire=JSON.parse(JSON.stringify(dispatch));
+  wire.worker.identity='attacker';
+  assert.throws(()=>validateRemoteDispatch(wire),/REMOTE_DISPATCH_HASH_MISMATCH/);
+});
+
+test('unknown remote actions fail closed instead of relying on a deny list',()=>{
+  assert.throws(()=>createRemoteDispatch({
+    taskId:'remote-test',providerId:'test',taskHash:'d'.repeat(64),sourceHead:head,
+    authority:{remoteActions:['git_push'],protectedActions:[],protectedEffectsAllowed:false},
+    worker:{identity:'worker:test',role:'builder',capabilitiesHash:'e'.repeat(64)},
+    lease:{generation:1,fencingTokenHash:'f'.repeat(64)}
+  }),/REMOTE_ACTION_NOT_ALLOWED/);
 });
