@@ -406,3 +406,33 @@ test('generic local workers receive an isolated profile by default',()=>{
   assert.equal(run(['init',localTask],cwd,env).status,0); const result=run(['run'],cwd,env); assert.equal(result.status,0,result.stderr);
   const state=JSON.parse(fs.readFileSync(stateFor(cwd),'utf8')); const observed=fs.readFileSync(path.join(state.workspace_path,'src','profile.txt'),'utf8'); assert.notEqual(path.normalize(observed),path.normalize(env.HOME)); assert.match(observed,/worker-profiles/i);
 });
+
+
+test('builder Git ref mutation is rejected before controller commit',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-builder-ref-tamper-')); const source=makeSourceRepo();
+  const worker=path.join(cwd,'worker.mjs');
+  fs.writeFileSync(worker,"import fs from 'node:fs';import{execFileSync}from'node:child_process';fs.writeFileSync('src/value.txt','after\\n');execFileSync('git',['tag','worker-tag']);console.log('changed');\n");
+  const spec=realTask(source); const localTask=path.join(cwd,'task.json'); fs.writeFileSync(localTask,JSON.stringify(spec,null,2));
+  const env=baseEnv(cwd,{BOUNDED_AGENT_GENERIC_EXECUTABLE:process.execPath,BOUNDED_AGENT_GENERIC_ARGS_JSON:JSON.stringify([worker])});
+  assert.equal(run(['init',localTask],cwd,env).status,0); const result=run(['run'],cwd,env);
+  assert.notEqual(result.status,0); assert.match(result.stderr,/GIT_CONTROL_STATE_TAMPERED:refs\/tags\/worker-tag/);
+});
+test('reviewer Git ref mutation is rejected even with APPROVE output',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-review-ref-tamper-')); const source=makeSourceRepo();
+  const worker=path.join(cwd,'worker.mjs');
+  fs.writeFileSync(worker,"import fs from 'node:fs';import{execFileSync}from'node:child_process';const p=process.argv.at(-1)||'';if(p.includes('You are the Reviewer')){execFileSync('git',['branch','reviewer-branch']);const sha=p.match(/Candidate commit: ([^\\n]+)/)?.[1]?.trim();const tree=p.match(/Candidate tree: ([^\\n]+)/)?.[1]?.trim();console.log(JSON.stringify({decision:'APPROVE',reason:'tampered',residual_risks:[],reviewed_candidate_sha:sha,reviewed_tree_hash:tree}));}else{fs.writeFileSync('src/value.txt','after\\n');console.log('changed');}\n");
+  const spec=realTask(source,'generic','generic'); const localTask=path.join(cwd,'task.json'); fs.writeFileSync(localTask,JSON.stringify(spec,null,2));
+  const env=baseEnv(cwd,{BOUNDED_AGENT_GENERIC_EXECUTABLE:process.execPath,BOUNDED_AGENT_GENERIC_ARGS_JSON:JSON.stringify([worker])});
+  assert.equal(run(['init',localTask],cwd,env).status,0); const result=run(['run'],cwd,env);
+  assert.notEqual(result.status,0); assert.match(result.stderr,/GIT_CONTROL_STATE_TAMPERED:(logs\/)?refs\/heads\/reviewer-branch/);
+});
+test('verification Git ref mutation is rejected after command execution',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-verify-ref-tamper-')); const source=makeSourceRepo();
+  const worker=path.join(cwd,'worker.mjs'); fs.writeFileSync(worker,"import fs from 'node:fs';fs.writeFileSync('src/value.txt','after\\n');console.log('changed');\n");
+  const verifier=path.join(cwd,'verifier.mjs'); fs.writeFileSync(verifier,"import{execFileSync}from'node:child_process';execFileSync('git',['tag','verify-tag']);\n");
+  const spec=realTask(source); spec.verification={commands:[{command:process.execPath,args:[verifier],timeout_seconds:20}]};
+  const localTask=path.join(cwd,'task.json'); fs.writeFileSync(localTask,JSON.stringify(spec,null,2));
+  const env=baseEnv(cwd,{BOUNDED_AGENT_GENERIC_EXECUTABLE:process.execPath,BOUNDED_AGENT_GENERIC_ARGS_JSON:JSON.stringify([worker])});
+  assert.equal(run(['init',localTask],cwd,env).status,0); const result=run(['run'],cwd,env);
+  assert.notEqual(result.status,0); assert.match(result.stderr,/GIT_CONTROL_STATE_TAMPERED:refs\/tags\/verify-tag/);
+});

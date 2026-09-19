@@ -425,20 +425,71 @@ export function gitExec(repo, args, { timeout = 10000, stdio = ['ignore','pipe',
   if (output == null) return '';
   return trim ? output.trim() : output.replace(/[\r\n]+$/, '');
 }
+function captureGitControlFile(gitDir, relativePath, { required = false } = {}) {
+  const full = path.join(gitDir, ...relativePath.split('/'));
+  if (!fs.existsSync(full)) {
+    if (required) throw new Error('GIT_CONTROL_FILE_MISSING:' + relativePath);
+    return null;
+  }
+  const info = fs.lstatSync(full);
+  if (!info.isFile() || info.isSymbolicLink() || info.nlink > 1) throw new Error('GIT_CONTROL_FILE_INVALID:' + relativePath);
+  return { path: relativePath, hash: sha256(fs.readFileSync(full)), size: info.size };
+}
+function captureGitControlTree(gitDir, relativeDir) {
+  const root = path.join(gitDir, ...relativeDir.split('/'));
+  if (!fs.existsSync(root)) return [];
+  const rootInfo = fs.lstatSync(root);
+  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw new Error('GIT_CONTROL_TREE_INVALID:' + relativeDir);
+  const out = [];
+  const walk = (dir, prefix) => {
+    for (const name of fs.readdirSync(dir).sort()) {
+      const full = path.join(dir, name);
+      const rel = prefix ? prefix + '/' + name : name;
+      const info = fs.lstatSync(full);
+      if (info.isSymbolicLink()) throw new Error('GIT_CONTROL_LINK_DENIED:' + rel);
+      if (info.isDirectory()) walk(full, rel);
+      else if (info.isFile()) {
+        if (info.nlink > 1) throw new Error('GIT_CONTROL_HARDLINK_DENIED:' + rel);
+        out.push({ path: rel, hash: sha256(fs.readFileSync(full)), size: info.size });
+      } else throw new Error('GIT_CONTROL_ENTRY_INVALID:' + rel);
+    }
+  };
+  walk(root, relativeDir);
+  return out;
+}
 export function captureGitControlState(repo) {
   const gitDir = path.join(repo, '.git');
-  const config = path.join(gitDir, 'config');
   const gitInfo = fs.lstatSync(gitDir);
-  const configInfo = fs.lstatSync(config);
   if (!gitInfo.isDirectory() || gitInfo.isSymbolicLink()) throw new Error('GIT_CONTROL_DIR_INVALID');
-  if (!configInfo.isFile() || configInfo.isSymbolicLink() || configInfo.nlink > 1) throw new Error('GIT_CONTROL_CONFIG_INVALID');
-  return { config_hash: sha256(fs.readFileSync(config)), config_size: configInfo.size };
+  const files = [
+    captureGitControlFile(gitDir, 'config', { required: true }),
+    captureGitControlFile(gitDir, 'HEAD', { required: true }),
+    captureGitControlFile(gitDir, 'packed-refs'),
+    ...captureGitControlTree(gitDir, 'refs'),
+    ...captureGitControlTree(gitDir, 'logs')
+  ].filter(Boolean).sort((a,b) => a.path.localeCompare(b.path));
+  return { schema_version: 2, files, digest: sha256(JSON.stringify(files)) };
 }
 export function assertGitControlState(repo, expected) {
-  if (!expected?.config_hash) throw new Error('GIT_CONTROL_SNAPSHOT_REQUIRED');
+  if (!expected?.digest || expected.schema_version !== 2 || !Array.isArray(expected.files)) throw new Error('GIT_CONTROL_SNAPSHOT_REQUIRED');
   const current = captureGitControlState(repo);
-  if (current.config_hash !== expected.config_hash || current.config_size !== expected.config_size) throw new Error('GIT_CONTROL_CONFIG_TAMPERED');
+  if (current.digest !== expected.digest || JSON.stringify(current.files) !== JSON.stringify(expected.files)) {
+    const before = new Map(expected.files.map(x => [x.path, x]));
+    const after = new Map(current.files.map(x => [x.path, x]));
+    const changed = [...new Set([...before.keys(), ...after.keys()])].sort().find(key => JSON.stringify(before.get(key) ?? null) !== JSON.stringify(after.get(key) ?? null));
+    if (changed === 'config') throw new Error('GIT_CONTROL_CONFIG_TAMPERED');
+    throw new Error('GIT_CONTROL_STATE_TAMPERED:' + (changed ?? 'unknown'));
+  }
   return true;
+}
+export function detachWorkspaceRemotes(repo) {
+  const remotes = gitExec(repo, ['remote']).split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  for (const remote of remotes) {
+    if (!/^[A-Za-z0-9._-]+$/.test(remote)) throw new Error('GIT_REMOTE_NAME_INVALID');
+    gitExec(repo, ['remote','remove',remote]);
+  }
+  if (gitExec(repo, ['remote']).trim()) throw new Error('GIT_REMOTE_DETACH_FAILED');
+  return remotes;
 }
 export function seedLocalGitWorkspace(source, workspace) {
   if (!source || source.kind !== 'local_git' || typeof source.path !== 'string' || !path.isAbsolute(source.path)) throw new Error('TASK_SOURCE_INVALID');
@@ -451,6 +502,7 @@ export function seedLocalGitWorkspace(source, workspace) {
   execFileSync('git', ['-c','protocol.file.allow=always','clone','-q','--no-hardlinks','--no-checkout',sourcePath,workspace], { timeout: 30000, env: safeGitEnv(), stdio: ['ignore','pipe','pipe'] });
   const ref = source.ref || 'HEAD';
   gitExec(workspace, ['checkout','-q','--detach',ref], { timeout: 20000 });
+  detachWorkspaceRemotes(workspace);
   gitExec(workspace, ['config','core.autocrlf','false']);
   gitExec(workspace, ['config','user.name','Bounded Agent Builder']);
   gitExec(workspace, ['config','user.email','builder@invalid.example']);
@@ -464,6 +516,7 @@ export function cloneCandidateWorkspace(builderWorkspace, targetWorkspace, candi
   fs.mkdirSync(path.dirname(targetWorkspace), { recursive: true });
   execFileSync('git', ['-c','protocol.file.allow=always','clone','-q','--no-hardlinks','--no-checkout',builderWorkspace,targetWorkspace], { timeout: 30000, env: safeGitEnv(), stdio: ['ignore','pipe','pipe'] });
   gitExec(targetWorkspace, ['checkout','-q','--detach',candidateSha], { timeout: 20000 });
+  detachWorkspaceRemotes(targetWorkspace);
   assertWorkspaceTreeSafe(targetWorkspace);
   return gitIdentity(targetWorkspace);
 }
