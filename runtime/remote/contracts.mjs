@@ -7,6 +7,7 @@ const PROTECTED_REMOTE_ACTIONS = new Set([
   'merge','deploy','release','publish','remote_mutation','live_trading',
   'credential_escalation','authority_expansion','irreversible_productive_mutation'
 ]);
+const V1_ALLOWED_REMOTE_ACTIONS = new Set(['build_local','test','review','verify']);
 
 const nonEmpty = value => typeof value === 'string' && value.trim().length > 0;
 const sha40 = value => typeof value === 'string' && /^[a-f0-9]{40}$/i.test(value);
@@ -23,6 +24,15 @@ function canonical(value) {
 export function hashRemoteValue(value) {
   return crypto.createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 }
+function deepFreeze(value) {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
+}
+function dispatchCore(dispatch) {
+  const { dispatchHash, ...core } = dispatch;
+  return core;
+}
 function normalizeAction(value) {
   if (typeof value !== 'string' || value !== value.trim() || value !== value.toLowerCase() || !/^[a-z][a-z0-9_:-]{0,63}$/.test(value)) throw new Error('REMOTE_ACTION_INVALID');
   return value;
@@ -37,6 +47,7 @@ function normalizeAuthority(authority = {}) {
   if (authority.protectedEffectsAllowed !== false) throw new Error('REMOTE_PROTECTED_EFFECTS_MUST_BE_FALSE');
   for (const action of remoteActions) {
     if (protectedActions.includes(action) || PROTECTED_REMOTE_ACTIONS.has(action)) throw new Error('REMOTE_PROTECTED_ACTION_NOT_ALLOWED:' + action);
+    if (!V1_ALLOWED_REMOTE_ACTIONS.has(action)) throw new Error('REMOTE_ACTION_NOT_ALLOWED:' + action);
   }
   return { remoteActions, protectedActions, protectedEffectsAllowed: false };
 }
@@ -54,7 +65,7 @@ export function createRemoteDispatch({
   if (!nonEmpty(isolation)) throw new Error('REMOTE_ISOLATION_REQUIRED');
   if (expectedCandidate && (!sha40(expectedCandidate.candidateSha) || !sha40(expectedCandidate.treeHash))) throw new Error('REMOTE_EXPECTED_CANDIDATE_INVALID');
   const createdAt = now.toISOString();
-  const dispatch = {
+  const core = {
     schemaVersion: REMOTE_TASK_SCHEMA,
     dispatchId: crypto.randomUUID(),
     createdAt,
@@ -76,11 +87,12 @@ export function createRemoteDispatch({
     privateProjectDataInBarSource: false,
     protectedEffectsAllowed: false
   };
-  return Object.freeze(dispatch);
+  return deepFreeze({ ...core, dispatchHash: hashRemoteValue(core) });
 }
 export function validateRemoteDispatch(dispatch, now = new Date()) {
   if (!dispatch || dispatch.schemaVersion !== REMOTE_TASK_SCHEMA) throw new Error('REMOTE_TASK_SCHEMA_INVALID');
-  if (!nonEmpty(dispatch.dispatchId) || !iso(dispatch.createdAt) || !iso(dispatch.expiresAt)) throw new Error('REMOTE_TASK_ENVELOPE_INVALID');
+  if (!nonEmpty(dispatch.dispatchId) || !iso(dispatch.createdAt) || !iso(dispatch.expiresAt) || !sha64(dispatch.dispatchHash)) throw new Error('REMOTE_TASK_ENVELOPE_INVALID');
+  if (dispatch.dispatchHash !== hashRemoteValue(dispatchCore(dispatch))) throw new Error('REMOTE_DISPATCH_HASH_MISMATCH');
   if (Date.parse(dispatch.expiresAt) <= Date.parse(dispatch.createdAt) || Date.parse(dispatch.expiresAt) <= now.getTime()) throw new Error('REMOTE_TASK_EXPIRED');
   if (!nonEmpty(dispatch.taskId) || !sha64(dispatch.taskHash) || !sha40(dispatch.sourceHead) || !nonEmpty(dispatch.providerId)) throw new Error('REMOTE_TASK_BINDING_INVALID');
   const authority = normalizeAuthority(dispatch.authority);
@@ -104,7 +116,7 @@ export function createRemoteResult({ dispatch, providerId, providerRunId, status
   if (protectedEffectsAttempted !== false) throw new Error('REMOTE_PROTECTED_EFFECT_ATTEMPTED');
   const core = {
     schemaVersion: REMOTE_RESULT_SCHEMA,
-    dispatchHash: hashRemoteValue(dispatch),
+    dispatchHash: dispatch.dispatchHash,
     providerId,
     providerRunId,
     status,
@@ -127,7 +139,7 @@ export function verifyRemoteResult({ dispatch, result, currentLease, consumedRes
   if (!consumedResultHashes || typeof consumedResultHashes.has !== 'function' || typeof consumedResultHashes.add !== 'function') throw new Error('REMOTE_REPLAY_LEDGER_REQUIRED');
   if (!result || result.schemaVersion !== REMOTE_RESULT_SCHEMA || !sha64(result.resultHash) || !nonEmpty(result.providerRunId) || !iso(result.collectedAt)) throw new Error('REMOTE_RESULT_SCHEMA_INVALID');
   if (result.resultHash !== hashRemoteValue(resultCore(result))) throw new Error('REMOTE_RESULT_HASH_MISMATCH');
-  if (result.dispatchHash !== hashRemoteValue(dispatch) || result.taskId !== dispatch.taskId || result.sourceHead !== dispatch.sourceHead || result.providerId !== dispatch.providerId) throw new Error('REMOTE_RESULT_DISPATCH_MISMATCH');
+  if (result.dispatchHash !== dispatch.dispatchHash || result.taskId !== dispatch.taskId || result.sourceHead !== dispatch.sourceHead || result.providerId !== dispatch.providerId) throw new Error('REMOTE_RESULT_DISPATCH_MISMATCH');
   if (result.authorityHash !== dispatch.authorityHash) throw new Error('REMOTE_RESULT_AUTHORITY_MISMATCH');
   if (JSON.stringify(result.worker) !== JSON.stringify(dispatch.worker)) throw new Error('REMOTE_RESULT_WORKER_MISMATCH');
   if (!currentLease || currentLease.generation !== dispatch.lease.generation || currentLease.fencingTokenHash !== dispatch.lease.fencingTokenHash) throw new Error('REMOTE_STALE_LEASE_OR_FENCE');
