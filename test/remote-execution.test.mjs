@@ -11,7 +11,7 @@ const head='a'.repeat(40), tree='b'.repeat(40);
 function fixture(expectedCandidate=null){
   const lease={generation:7,fencingTokenHash:'c'.repeat(64)};
   const dispatch=createRemoteDispatch({
-    taskId:'remote-test',taskHash:'d'.repeat(64),sourceHead:head,
+    taskId:'remote-test',providerId:'test',taskHash:'d'.repeat(64),sourceHead:head,
     authority:{remoteActions:['build_local','verify'],protectedActions:['merge'],protectedEffectsAllowed:false},
     worker:{identity:'worker:test',role:'builder',capabilitiesHash:'e'.repeat(64)},
     lease,expectedCandidate
@@ -39,7 +39,7 @@ test('remote dispatch binds authority, worker and fence',()=>{
 });
 test('remote protected authority widening is rejected',()=>{
   assert.throws(()=>createRemoteDispatch({
-    taskId:'remote-test',taskHash:'d'.repeat(64),sourceHead:head,
+    taskId:'remote-test',providerId:'test',taskHash:'d'.repeat(64),sourceHead:head,
     authority:{remoteActions:['merge'],protectedActions:['merge'],protectedEffectsAllowed:false},
     worker:{identity:'worker:test',role:'builder',capabilitiesHash:'e'.repeat(64)},
     lease:{generation:1,fencingTokenHash:'f'.repeat(64)}
