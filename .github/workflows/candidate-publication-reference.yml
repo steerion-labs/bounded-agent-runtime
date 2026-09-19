@@ -1,0 +1,46 @@
+name: BAR Candidate Publication Reference
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/candidate-publication-reference.yml'
+      - 'docs/26-REMOTE-CANDIDATE-PUBLISH.md'
+      - 'runtime/remote/candidate-publication.mjs'
+      - 'runtime/remote/reference-candidate-publisher.mjs'
+      - 'scripts/candidate-publication-proof.mjs'
+      - 'test/candidate-publication.test.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: candidate-publication-reference-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reference:
+    name: Synthetic candidate publication proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Prove candidate publication boundary
+        run: node scripts/candidate-publication-proof.mjs --out bar-proof/candidate-publication.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bar-candidate-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: bar-proof/
+          if-no-files-found: error
+          retention-days: 7
