@@ -25,9 +25,12 @@ jobs:
     name: Ephemeral remote worker proof
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      BAR_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.BAR_SOURCE_HEAD }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
