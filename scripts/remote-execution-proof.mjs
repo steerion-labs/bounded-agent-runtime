@@ -64,7 +64,7 @@ const proof={
   exactHeadBound:sourceHead===actualHead,
   candidateSha:remoteResult?.candidateSha||null,
   treeHash:remoteResult?.treeHash||null,
-  dispatchHash:dispatch?hashRemoteValue(dispatch):null,
+  dispatchHash:dispatch?.dispatchHash||null,
   resultHash:remoteResult?.resultHash||null,
   runId,
   repositoryPermissions:'contents:read',
