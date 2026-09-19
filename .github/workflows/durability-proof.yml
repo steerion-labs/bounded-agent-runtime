@@ -42,12 +42,12 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - name: Recovery, fencing and Human Gate proof
-        run: node scripts/durability-proof.mjs --out .bar-proof/durability-proof.json
+        run: node scripts/durability-proof.mjs --out bar-proof/durability-proof.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: bar-durability-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .bar-proof/
+          path: bar-proof/
           if-no-files-found: error
           retention-days: 7
 
@@ -70,12 +70,12 @@ jobs:
       - name: Write container proof
         shell: bash
         run: |
-          mkdir -p .bar-proof
-          node -e "const fs=require('fs');fs.writeFileSync('.bar-proof/container-proof.json',JSON.stringify({schemaVersion:'bar.container-durability-proof.v1',status:'PASS',sourceHead:process.env.GITHUB_SHA,runId:process.env.GITHUB_RUN_ID,runner:'ubuntu-latest',containerE2E:true,secretsRequired:false,protectedRemoteMutationAttempted:false},null,2)+'\\n')"
+          mkdir -p bar-proof
+          node -e "const fs=require('fs');fs.writeFileSync('bar-proof/container-proof.json',JSON.stringify({schemaVersion:'bar.container-durability-proof.v1',status:'PASS',sourceHead:process.env.GITHUB_SHA,runId:process.env.GITHUB_RUN_ID,runner:'ubuntu-latest',containerE2E:true,secretsRequired:false,protectedRemoteMutationAttempted:false},null,2)+'\\n')"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: bar-container-durability-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .bar-proof/
+          path: bar-proof/
           if-no-files-found: error
           retention-days: 7
