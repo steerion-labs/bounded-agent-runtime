@@ -1,4 +1,4 @@
-import { assertRemoteProvider, createRemoteResult, hashRemoteValue, validateRemoteDispatch } from './contracts.mjs';
+import { assertRemoteProvider, createRemoteResult, validateRemoteDispatch } from './contracts.mjs';
 
 export function createGithubHostedReferenceProvider(env = process.env) {
   const provider = {
@@ -17,12 +17,12 @@ export function createGithubHostedReferenceProvider(env = process.env) {
       return Object.freeze({
         providerId: this.id,
         providerRunId: String(env.GITHUB_RUN_ID || 'local-reference-proof'),
-        dispatchHash: hashRemoteValue(prepared.dispatch),
+        dispatchHash: prepared.dispatch.dispatchHash,
         status: 'RUNNING'
       });
     },
     collect(run, { dispatch, candidateSha, treeHash, evidence }) {
-      if (run.providerId !== this.id || !run.providerRunId || run.dispatchHash !== hashRemoteValue(dispatch) || dispatch.providerId !== this.id) throw new Error('REMOTE_PROVIDER_RUN_INVALID');
+      if (run.providerId !== this.id || !run.providerRunId || run.dispatchHash !== dispatch.dispatchHash || dispatch.providerId !== this.id) throw new Error('REMOTE_PROVIDER_RUN_INVALID');
       return createRemoteResult({
         dispatch,
         providerId: this.id,
