@@ -1,35 +1,52 @@
 # Remote Execution Provider Contract
 
-BAR may execute bounded work on remote or ephemeral compute without moving policy or protected authority into an LLM.
+BAR may execute bounded work on remote or ephemeral compute without moving policy or protected authority into an LLM or into the compute provider.
 
 ## Invariants
 
 - The provider is compute, never an authority source.
-- The task contract is fixed before dispatch and is bound to an exact source revision.
-- Workers receive only the capabilities required for their role.
+- The task contract is fixed before dispatch and bound to an exact source revision.
+- Remote authority is explicit and cannot include protected actions.
+- Worker identity, capability fingerprint, lease generation and fencing token hash are bound into every dispatch.
 - Provider credentials, repository credentials and private project data are not part of BAR source code.
 - Remote workers cannot approve protected actions.
-- Candidate identity, verification evidence, review and Human Gate semantics remain controller-owned.
+- Candidate SHA/tree, evidence, provider run and exact source HEAD are bound into the returned result.
 - A lost or restarted worker must not regain stale authority; lease and fencing checks remain mandatory.
-- Remote execution never implies merge, deploy, release, publish or other protected side effects.
+- Replayed results, stale leases, evidence drift, candidate drift and authority widening fail closed.
+- Remote execution never implies merge, deploy, release, publish or another protected side effect.
+
+## Machine-readable protocol
+
+runtime/remote/contracts.mjs defines two versioned envelopes.
+
+- bar.remote-task.v1 binds task hash, exact source HEAD, allowed remote actions, protected actions, worker identity/capability hash, lease generation/fence, isolation, network policy and optional expected candidate.
+- bar.remote-result.v1 binds the dispatch hash, provider/run identity, authority hash, worker, lease/fence, candidate SHA/tree and evidence hash.
+
+The controller or consuming private system must compare the returned result against the current lease/fence and the actual candidate/evidence before accepting it. A remote provider never receives authority merely because it returns PASS.
 
 ## Provider interface
 
-A provider implementation must expose four bounded operations:
+Every provider implements four bounded operations.
 
-1. `prepare(task)` — validate provider configuration and produce an immutable dispatch description.
-2. `execute(dispatch)` — run the declared Builder/Verifier/Reviewer stage inside the provider boundary.
-3. `collect(run)` — return machine-readable evidence bound to task, source revision, provider run and candidate.
-4. `cancel(run)` — revoke the current run without granting authority to a replacement.
+1. prepare(dispatch) validates configuration and the immutable dispatch.
+2. execute(prepared) runs the declared Builder/Verifier/Reviewer stage inside the provider boundary.
+3. collect(run, result) returns a machine-readable result bound to dispatch, provider run and candidate.
+4. cancel(run) revokes the current run without granting authority to a replacement.
 
-Every provider must declare its isolation properties, network policy, credential boundary, maximum lifetime and recovery semantics. BAR must fail closed when those properties cannot be verified.
+runtime/remote/reference-provider.mjs implements this interface for the public GitHub-hosted reference proof. Other transports may implement the same interface without changing controller or Human Gate authority.
 
-## First reference provider: GitHub-hosted runner
+## GitHub-hosted reference proof
 
-The first reference integration is intentionally generic and public-safe. It proves that BAR can start from a clean GitHub-hosted machine, run its deterministic boundary/recovery proof, and emit machine-readable evidence. It requires no repository secrets and has read-only repository permissions.
+The reference workflow checks out the exact PR HEAD, with contents: read, persist-credentials: false and no repository secrets. It runs the deterministic durability proof and a protocol round-trip, then proves rejection of replay, stale fencing, evidence drift and remote authority widening.
 
-This reference proof is not a remote mutation adapter. It does not clone private target repositories, receive private task content, push candidates, create pull requests, merge, deploy or release.
+The resulting artifact is bar.remote-execution-proof.v1 and records the exact source HEAD, candidate/tree identity, dispatch/result hashes and negative-control outcomes.
 
-## Future providers
+## Privacy boundary
 
-Additional providers such as generic Linux hosts, self-hosted runners or Kubernetes may implement the same contract. Provider-specific code must not change BAR's controller, evidence or Human Gate authority model.
+BAR stays public, generic and model/project agnostic. Private repository names, task payloads, business data and private credentials belong to the consuming private system and may only be supplied at runtime through an approved provider transport. They must never be committed into BAR.
+
+## Explicit non-proof
+
+This public reference provider is not a private-repository mutation adapter. It does not receive private task content, push candidates, create pull requests, merge, deploy or release. A consuming system that needs private remote engineering must implement its own private provider transport against this protocol and prove the same lease/fence, candidate, evidence and Human Gate invariants.
+
+Remote compute is capability, never authority.
