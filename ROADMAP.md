@@ -17,7 +17,7 @@ BAR follows an evidence-first roadmap. Items are direction, not promises or deli
 
 - adapter compatibility probes that record detected CLI versions
 - signed machine-readable verification bundles
-- additional isolated execution providers behind the same controller contract
+- remote/ephemeral execution providers behind the same controller contract (GitHub-hosted reference proof in progress)
 - improved local read-only evidence UI
 - reviewed reference integrations that consume authorization receipts without weakening the Human Gate
 - short terminal demo / GIF for a real bounded task
