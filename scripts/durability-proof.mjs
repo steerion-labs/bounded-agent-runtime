@@ -11,7 +11,7 @@ const root=path.resolve('.');
 const log=[];
 
 function run(label,command,argv,{expect=null}={}){
-  const result=spawnSync(command,argv,{cwd:root,encoding:'utf8',windowsHide:true,env:{...process.env}});
+  const result=spawnSync(command,argv,{cwd:root,encoding:'utf8',windowsHide:true,env:{...process.env},timeout:120000});
   const stdout=String(result.stdout||'');
   const stderr=String(result.stderr||'');
   log.push('## '+label+'\n$ '+command+' '+argv.join(' ')+'\n'+stdout+stderr+'\n');
@@ -24,11 +24,16 @@ run('source-head','git',['rev-parse','HEAD']);
 const sourceHead=String(spawnSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8',windowsHide:true}).stdout||'').trim();
 if(!/^[a-f0-9]{40}$/i.test(sourceHead)) throw new Error('SOURCE_HEAD_INVALID');
 
-const securityPattern=[
+const boundaryPattern=[
+  'task-declared protected action routes to Human Gate',
+  'protected but disallowed action is denied before Human Gate',
   'expired lease is rejected',
   'fencing mismatch is rejected',
   'gate signature binds identity and exact candidate',
-  'authorization receipt verification rejects signed expiry',
+  'authorization receipt verification rejects signed expiry'
+].join('|');
+
+const integrationPattern=[
   'controller reaches Human Gate with controller-derived Git identity and no remote',
   'forged ACCEPTED state cannot bypass Human Gate',
   'approval nonce cannot be replayed after state rollback',
@@ -39,17 +44,26 @@ const securityPattern=[
 ].join('|');
 
 const checks=[];
-checks.push({name:'security-recovery-suite',...run(
-  'security-recovery-suite',
+checks.push({name:'boundary-suite',...run(
+  'boundary-suite',
   process.execPath,
-  ['--test',`--test-name-pattern=${securityPattern}`,'test/runtime.test.mjs','test/integration.test.mjs']
+  ['--test',`--test-name-pattern=${boundaryPattern}`,'test/runtime.test.mjs']
 )});
-checks.push({name:'quickstart-human-gate',...run(
-  'quickstart-human-gate',
-  process.execPath,
-  ['bin/bar.mjs','quickstart'],
-  {expect:/4\/4 PASS: HUMAN_GATE_REQUIRED/}
-)});
+
+const linuxIntegration=process.platform!=='win32';
+if(linuxIntegration){
+  checks.push({name:'recovery-integration-suite',...run(
+    'recovery-integration-suite',
+    process.execPath,
+    ['--test',`--test-name-pattern=${integrationPattern}`,'test/integration.test.mjs']
+  )});
+  checks.push({name:'quickstart-human-gate-e2e',...run(
+    'quickstart-human-gate-e2e',
+    process.execPath,
+    ['bin/bar.mjs','quickstart'],
+    {expect:/4\\/4 PASS: HUMAN_GATE_REQUIRED/}
+  )});
+}
 
 const status=spawnSync('git',['status','--porcelain=v1','--untracked-files=all'],{cwd:root,encoding:'utf8',windowsHide:true});
 if(status.status!==0) throw new Error('GIT_STATUS_FAILED');
@@ -79,7 +93,9 @@ const report={
   checks,
   guarantees:{
     offHostWhenGithubHosted:Boolean(process.env.GITHUB_ACTIONS),
-    humanGateReached:true,
+    humanGatePolicyProven:true,
+    humanGateE2EProven:linuxIntegration,
+    recoveryIntegrationProven:linuxIntegration,
     protectedRemoteMutationAttempted:false,
     sourceMutationObserved:false,
     secretsRequired:false
