@@ -477,6 +477,7 @@ export function assertGitControlState(repo, expected) {
     const before = new Map(expected.files.map(x => [x.path, x]));
     const after = new Map(current.files.map(x => [x.path, x]));
     const changed = [...new Set([...before.keys(), ...after.keys()])].sort().find(key => JSON.stringify(before.get(key) ?? null) !== JSON.stringify(after.get(key) ?? null));
+    if (changed === 'config') throw new Error('GIT_CONTROL_CONFIG_TAMPERED');
     throw new Error('GIT_CONTROL_STATE_TAMPERED:' + (changed ?? 'unknown'));
   }
   return true;
