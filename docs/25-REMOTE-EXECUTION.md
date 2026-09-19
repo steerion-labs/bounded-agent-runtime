@@ -7,6 +7,7 @@ BAR may execute bounded work on remote or ephemeral compute without moving polic
 - The provider is compute, never an authority source.
 - The task contract is fixed before dispatch and bound to an exact source revision.
 - Remote authority is explicit and cannot include protected actions.
+- V1 remote actions are allowlisted in BAR code; unknown action names fail closed instead of inheriting authority from caller vocabulary.
 - Worker identity, capability fingerprint, lease generation and fencing token hash are bound into every dispatch.
 - Provider credentials, repository credentials and private project data are not part of BAR source code.
 - Remote workers cannot approve protected actions.
@@ -19,10 +20,10 @@ BAR may execute bounded work on remote or ephemeral compute without moving polic
 
 runtime/remote/contracts.mjs defines two versioned envelopes.
 
-- bar.remote-task.v1 binds task hash, exact source HEAD, expected provider identity, allowed remote actions, protected actions, worker identity/capability hash, lease generation/fence, isolation, network policy and optional expected candidate.
+- bar.remote-task.v1 binds task hash, exact source HEAD, expected provider identity, allowlisted remote actions, protected actions, worker identity/capability hash, lease generation/fence, isolation, network policy and optional expected candidate. The entire dispatch is SHA-256 bound and deeply immutable when created in-process; deserialized dispatches are re-hashed during validation.
 - bar.remote-result.v1 binds the dispatch hash, provider/run identity, authority hash, worker, lease/fence, candidate SHA/tree and evidence hash.
 
-The controller or consuming private system must compare the returned result against the current lease/fence and the actual candidate/evidence before accepting it. Result verification also requires a replay ledger; verification fails closed if no ledger is supplied. A remote provider never receives authority merely because it returns PASS.
+The controller or consuming private system must compare the returned result against the current lease/fence and the actual candidate/evidence before accepting it. Dispatch validation rejects post-creation or in-transit mutation through the bound dispatch hash. Result verification also requires a replay ledger; verification fails closed if no ledger is supplied. A remote provider never receives authority merely because it returns PASS.
 
 ## Provider interface
 
