@@ -23,6 +23,7 @@ try {
   const lease={generation,fencingTokenHash:hashRemoteValue({runId,generation,sourceHead})};
   dispatch=createRemoteDispatch({
     taskId:'bar-public-remote-reference',
+    providerId:'github-hosted-runner',
     taskHash:hashRemoteValue({fixture:'public-reference-proof',sourceHead}),
     sourceHead,
     authority:{remoteActions:['build_local','review','verify'],protectedActions:['deploy','merge','release'],protectedEffectsAllowed:false},
