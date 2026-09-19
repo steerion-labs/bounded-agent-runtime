@@ -38,11 +38,11 @@ function normalizeAuthority(authority = {}) {
   return { remoteActions, protectedActions, protectedEffectsAllowed: false };
 }
 export function createRemoteDispatch({
-  taskId, taskHash, sourceHead, authority, worker, lease,
+  taskId, taskHash, sourceHead, providerId, authority, worker, lease,
   maxLifetimeSeconds = 600, networkPolicy = 'DENY_BY_DEFAULT',
   isolation = 'EPHEMERAL', expectedCandidate = null, now = new Date()
 }) {
-  if (!nonEmpty(taskId) || !sha64(taskHash) || !sha40(sourceHead)) throw new Error('REMOTE_TASK_BINDING_INVALID');
+  if (!nonEmpty(taskId) || !sha64(taskHash) || !sha40(sourceHead) || !nonEmpty(providerId)) throw new Error('REMOTE_TASK_BINDING_INVALID');
   const normalizedAuthority = normalizeAuthority(authority);
   if (!worker || !nonEmpty(worker.identity) || !nonEmpty(worker.role) || !sha64(worker.capabilitiesHash)) throw new Error('REMOTE_WORKER_BINDING_INVALID');
   if (!lease || !Number.isSafeInteger(lease.generation) || lease.generation < 0 || !sha64(lease.fencingTokenHash)) throw new Error('REMOTE_LEASE_BINDING_INVALID');
@@ -59,6 +59,7 @@ export function createRemoteDispatch({
     taskId,
     taskHash: taskHash.toLowerCase(),
     sourceHead: sourceHead.toLowerCase(),
+    providerId,
     authority: normalizedAuthority,
     authorityHash: hashRemoteValue(normalizedAuthority),
     worker: { identity: worker.identity, role: worker.role, capabilitiesHash: worker.capabilitiesHash.toLowerCase() },
@@ -78,7 +79,7 @@ export function validateRemoteDispatch(dispatch, now = new Date()) {
   if (!dispatch || dispatch.schemaVersion !== REMOTE_TASK_SCHEMA) throw new Error('REMOTE_TASK_SCHEMA_INVALID');
   if (!nonEmpty(dispatch.dispatchId) || !iso(dispatch.createdAt) || !iso(dispatch.expiresAt)) throw new Error('REMOTE_TASK_ENVELOPE_INVALID');
   if (Date.parse(dispatch.expiresAt) <= Date.parse(dispatch.createdAt) || Date.parse(dispatch.expiresAt) <= now.getTime()) throw new Error('REMOTE_TASK_EXPIRED');
-  if (!nonEmpty(dispatch.taskId) || !sha64(dispatch.taskHash) || !sha40(dispatch.sourceHead)) throw new Error('REMOTE_TASK_BINDING_INVALID');
+  if (!nonEmpty(dispatch.taskId) || !sha64(dispatch.taskHash) || !sha40(dispatch.sourceHead) || !nonEmpty(dispatch.providerId)) throw new Error('REMOTE_TASK_BINDING_INVALID');
   const authority = normalizeAuthority(dispatch.authority);
   if (dispatch.authorityHash !== hashRemoteValue(authority)) throw new Error('REMOTE_AUTHORITY_HASH_MISMATCH');
   if (!dispatch.worker || !nonEmpty(dispatch.worker.identity) || !nonEmpty(dispatch.worker.role) || !sha64(dispatch.worker.capabilitiesHash)) throw new Error('REMOTE_WORKER_BINDING_INVALID');
@@ -93,7 +94,7 @@ function resultCore(result) {
 }
 export function createRemoteResult({ dispatch, providerId, providerRunId, status = 'PASS', candidateSha, treeHash, evidence = [], protectedEffectsAttempted = false, now = new Date() }) {
   validateRemoteDispatch(dispatch, now);
-  if (!nonEmpty(providerId) || !nonEmpty(providerRunId)) throw new Error('REMOTE_PROVIDER_IDENTITY_REQUIRED');
+  if (!nonEmpty(providerId) || !nonEmpty(providerRunId) || providerId !== dispatch.providerId) throw new Error('REMOTE_PROVIDER_IDENTITY_REQUIRED');
   if (!['PASS','FAIL','CANCELLED'].includes(status)) throw new Error('REMOTE_RESULT_STATUS_INVALID');
   if (status === 'PASS' && (!sha40(candidateSha) || !sha40(treeHash))) throw new Error('REMOTE_RESULT_CANDIDATE_REQUIRED');
   if (!Array.isArray(evidence) || evidence.length === 0) throw new Error('REMOTE_RESULT_EVIDENCE_REQUIRED');
@@ -122,7 +123,7 @@ export function verifyRemoteResult({ dispatch, result, currentLease, consumedRes
   validateRemoteDispatch(dispatch, now);
   if (!result || result.schemaVersion !== REMOTE_RESULT_SCHEMA || !sha64(result.resultHash)) throw new Error('REMOTE_RESULT_SCHEMA_INVALID');
   if (result.resultHash !== hashRemoteValue(resultCore(result))) throw new Error('REMOTE_RESULT_HASH_MISMATCH');
-  if (result.dispatchHash !== hashRemoteValue(dispatch) || result.taskId !== dispatch.taskId || result.sourceHead !== dispatch.sourceHead) throw new Error('REMOTE_RESULT_DISPATCH_MISMATCH');
+  if (result.dispatchHash !== hashRemoteValue(dispatch) || result.taskId !== dispatch.taskId || result.sourceHead !== dispatch.sourceHead || result.providerId !== dispatch.providerId) throw new Error('REMOTE_RESULT_DISPATCH_MISMATCH');
   if (result.authorityHash !== dispatch.authorityHash) throw new Error('REMOTE_RESULT_AUTHORITY_MISMATCH');
   if (JSON.stringify(result.worker) !== JSON.stringify(dispatch.worker)) throw new Error('REMOTE_RESULT_WORKER_MISMATCH');
   if (!currentLease || currentLease.generation !== dispatch.lease.generation || currentLease.fencingTokenHash !== dispatch.lease.fencingTokenHash) throw new Error('REMOTE_STALE_LEASE_OR_FENCE');
