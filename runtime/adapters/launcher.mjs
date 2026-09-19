@@ -20,6 +20,16 @@ function windowsCandidates(command) {
   return found;
 }
 
+function resolveBundledNpmShim(file) {
+  const base = path.dirname(file);
+  const name = path.basename(file).toLowerCase();
+  if (!['npm.cmd','npx.cmd'].includes(name)) return null;
+  const cli = path.join(base, 'node_modules', 'npm', 'bin', name === 'npm.cmd' ? 'npm-cli.js' : 'npx-cli.js');
+  if (!existingFile(cli)) return null;
+  const bundledNode = path.join(base, 'node.exe');
+  return { command: existingFile(bundledNode) ? bundledNode : process.execPath, prependArgs: [cli] };
+}
+
 function resolveNpmCmdShim(file) {
   const text = fs.readFileSync(file, 'utf8');
   const base = path.dirname(file);
@@ -40,6 +50,8 @@ export function resolveLaunchCommand(command, args = []) {
   for (const candidate of candidates) {
     if (/\.(?:exe|com)$/i.test(candidate)) return { command: candidate, args };
     if (/\.cmd$/i.test(candidate)) {
+      const bundled = resolveBundledNpmShim(candidate);
+      if (bundled) return { command: bundled.command, args: [...bundled.prependArgs, ...args] };
       const resolved = resolveNpmCmdShim(candidate);
       if (resolved) return { command: resolved.command, args: [...resolved.prependArgs, ...args] };
       continue;
