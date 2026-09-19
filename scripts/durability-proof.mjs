@@ -61,7 +61,7 @@ if(linuxIntegration){
     'quickstart-human-gate-e2e',
     process.execPath,
     ['bin/bar.mjs','quickstart'],
-    {expect:/4\\/4 PASS: HUMAN_GATE_REQUIRED/}
+    {expect:/4\/4 PASS: HUMAN_GATE_REQUIRED/}
   )});
 }
 
