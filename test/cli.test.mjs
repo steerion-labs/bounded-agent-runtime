@@ -213,6 +213,22 @@ test('Codex builder task creation requires explicit user-config opt-in',()=>{
   assert.notEqual(result.status,0); assert.match(result.stderr,/CODEX_BUILDER_EXPLICIT_OPT_IN_REQUIRED/);
 });
 
+test('Windows resolver supports modern bundled npm and npx shims without shell execution', async t => {
+  if (process.platform !== 'win32') return t.skip('Windows-specific launcher contract');
+  const { resolveLaunchCommand } = await import('../runtime/adapters/launcher.mjs');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'bar-modern-npm-shim-'));
+  const bin=path.join(root,'node_modules','npm','bin'); fs.mkdirSync(bin,{recursive:true});
+  const nodeExe=path.join(root,'node.exe'); fs.writeFileSync(nodeExe,'');
+  const npmCli=path.join(bin,'npm-cli.js'), npxCli=path.join(bin,'npx-cli.js'); fs.writeFileSync(npmCli,''); fs.writeFileSync(npxCli,'');
+  const modern=':: Created by npm, please don\'t edit manually.\r\n@ECHO OFF\r\nSETLOCAL\r\nSET "NODE_EXE=%~dp0\\node.exe"\r\nSET "NPM_CLI_JS=%~dp0\\node_modules\\npm\\bin\\npm-cli.js"\r\n"%NODE_EXE%" "%NPM_CLI_JS%" %*\r\n';
+  fs.writeFileSync(path.join(root,'npm.cmd'),modern); fs.writeFileSync(path.join(root,'npx.cmd'),modern.replaceAll('npm-cli.js','npx-cli.js'));
+  const prev=process.env.PATH; process.env.PATH=`${root};${prev}`;
+  try {
+    const npm=resolveLaunchCommand('npm',['test']); assert.equal(path.normalize(npm.command),path.normalize(nodeExe)); assert.equal(path.normalize(npm.args[0]),path.normalize(npmCli)); assert.equal(npm.args[1],'test');
+    const npx=resolveLaunchCommand('npx',['--version']); assert.equal(path.normalize(npx.command),path.normalize(nodeExe)); assert.equal(path.normalize(npx.args[0]),path.normalize(npxCli)); assert.equal(npx.args[1],'--version');
+  } finally { process.env.PATH=prev; fs.rmSync(root,{recursive:true,force:true}); }
+});
+
 test('Windows resolver supports real Codex and OpenCode npm shim forms', async t => {
   if (process.platform !== 'win32') return t.skip('Windows-specific launcher contract');
   const { resolveLaunchCommand } = await import('../runtime/adapters/launcher.mjs');
