@@ -1,0 +1,81 @@
+name: BAR Off-Host Durability Proof
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/durability-proof.yml'
+      - 'scripts/durability-proof.mjs'
+      - 'runtime/**'
+      - 'test/**'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+    - cron: '43 3 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: durability-${{ github.workflow }}-${{ github.ref }}-${{ github.event.schedule || 'interactive' }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    if: github.event_name != 'schedule' || github.event.schedule == '17 * * * *'
+    name: Core durability (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Recovery, fencing and Human Gate proof
+        run: node scripts/durability-proof.mjs --out bar-proof/durability-proof.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bar-durability-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: bar-proof/
+          if-no-files-found: error
+          retention-days: 7
+
+  container:
+    if: github.event_name != 'schedule' || github.event.schedule == '43 3 * * *'
+    name: Container isolation durability
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: docker pull node:20-alpine
+      - run: npm run test:container
+      - name: Write container proof
+        shell: bash
+        run: |
+          mkdir -p bar-proof
+          node -e "const fs=require('fs');fs.writeFileSync('bar-proof/container-proof.json',JSON.stringify({schemaVersion:'bar.container-durability-proof.v1',status:'PASS',sourceHead:process.env.GITHUB_SHA,runId:process.env.GITHUB_RUN_ID,runner:'ubuntu-latest',containerE2E:true,secretsRequired:false,protectedRemoteMutationAttempted:false},null,2)+'\\n')"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bar-container-durability-${{ github.run_id }}-${{ github.run_attempt }}
+          path: bar-proof/
+          if-no-files-found: error
+          retention-days: 7
