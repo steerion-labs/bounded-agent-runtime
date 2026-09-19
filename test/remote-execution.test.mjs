@@ -48,15 +48,15 @@ test('remote protected authority widening is rejected',()=>{
 test('result is bound to dispatch, candidate, evidence and current fence',()=>{
   const {lease,dispatch}=fixture({candidateSha:head,treeHash:tree});
   const result=createRemoteResult({dispatch,providerId:'test',providerRunId:'run-1',candidateSha:head,treeHash:tree,evidence:[{status:'PASS',digest:hashRemoteValue('ok')}]});
-  assert.equal(verifyRemoteResult({dispatch,result,currentLease:lease}),true);
-  assert.throws(()=>verifyRemoteResult({dispatch,result,currentLease:{...lease,generation:8}}),/REMOTE_STALE_LEASE_OR_FENCE/);
-  assert.throws(()=>verifyRemoteResult({dispatch,result:{...result,evidence:[{status:'FAIL'}]},currentLease:lease}),/REMOTE_RESULT_HASH_MISMATCH|REMOTE_RESULT_EVIDENCE_MISMATCH/);
+  assert.equal(verifyRemoteResult({dispatch,result,currentLease:lease,consumedResultHashes:new Set()}),true);
+  assert.throws(()=>verifyRemoteResult({dispatch,result,currentLease:{...lease,generation:8},consumedResultHashes:new Set()}),/REMOTE_STALE_LEASE_OR_FENCE/);
+  assert.throws(()=>verifyRemoteResult({dispatch,result:{...result,evidence:[{status:'FAIL'}]},currentLease:lease,consumedResultHashes:new Set()}),/REMOTE_RESULT_HASH_MISMATCH|REMOTE_RESULT_EVIDENCE_MISMATCH/);
 });
 test('candidate drift and result replay fail closed',()=>{
   const {lease,dispatch}=fixture({candidateSha:head,treeHash:tree});
   const drift='9'.repeat(40);
   const result=createRemoteResult({dispatch,providerId:'test',providerRunId:'run-2',candidateSha:drift,treeHash:tree,evidence:[{status:'PASS'}]});
-  assert.throws(()=>verifyRemoteResult({dispatch,result,currentLease:lease}),/REMOTE_CANDIDATE_DRIFT/);
+  assert.throws(()=>verifyRemoteResult({dispatch,result,currentLease:lease,consumedResultHashes:new Set()}),/REMOTE_CANDIDATE_DRIFT/);
   const good=createRemoteResult({dispatch,providerId:'test',providerRunId:'run-3',candidateSha:head,treeHash:tree,evidence:[{status:'PASS'}]});
   const consumed=new Set();
   assert.equal(verifyRemoteResult({dispatch,result:good,currentLease:lease,consumedResultHashes:consumed}),true);
@@ -69,4 +69,16 @@ test('provider contract is transport-neutral and cannot become authority',()=>{
   assert.match(doc,/provider is compute, never an authority source/i);
   assert.match(doc,/Remote workers cannot approve protected actions/i);
   assert.match(doc,/lease and fencing checks remain mandatory/i);
+});
+
+test('remote action aliases and missing replay ledger fail closed',()=>{
+  assert.throws(()=>createRemoteDispatch({
+    taskId:'remote-test',providerId:'test',taskHash:'d'.repeat(64),sourceHead:head,
+    authority:{remoteActions:['Merge'],protectedActions:['merge'],protectedEffectsAllowed:false},
+    worker:{identity:'worker:test',role:'builder',capabilitiesHash:'e'.repeat(64)},
+    lease:{generation:1,fencingTokenHash:'f'.repeat(64)}
+  }),/REMOTE_ACTION_INVALID/);
+  const {lease,dispatch}=fixture({candidateSha:head,treeHash:tree});
+  const result=createRemoteResult({dispatch,providerId:'test',providerRunId:'run-ledger',candidateSha:head,treeHash:tree,evidence:[{status:'PASS'}]});
+  assert.throws(()=>verifyRemoteResult({dispatch,result,currentLease:lease}),/REMOTE_REPLAY_LEDGER_REQUIRED/);
 });
