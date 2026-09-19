@@ -42,7 +42,7 @@ const checks=[];
 checks.push({name:'security-recovery-suite',...run(
   'security-recovery-suite',
   process.execPath,
-  ['--test','--test-name-pattern',securityPattern,'test/runtime.test.mjs','test/integration.test.mjs']
+  ['--test',`--test-name-pattern=${securityPattern}`,'test/runtime.test.mjs','test/integration.test.mjs']
 )});
 checks.push({name:'quickstart-human-gate',...run(
   'quickstart-human-gate',
