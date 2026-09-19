@@ -1,6 +1,8 @@
 name: BAR Off-Host Durability Proof
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
     paths:

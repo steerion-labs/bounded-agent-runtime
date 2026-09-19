@@ -13,6 +13,7 @@ test('durability workflow is read-only and secretless',()=>{
 });
 
 test('durability proof covers Linux, Windows and daily container isolation',()=>{
+  assert.match(workflow,/push:\s*\n\s*branches: \[main\]/);
   assert.match(workflow,/os: \[ubuntu-latest, windows-latest\]/);
   assert.match(workflow,/cron: '17 \* \* \* \*'/);
   assert.match(workflow,/cron: '43 3 \* \* \*'/);
