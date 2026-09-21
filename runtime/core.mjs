@@ -308,6 +308,11 @@ export function spendBudget(state, delta = {}) {
 export function remainingWallClockMs(state) {
   assertBudget(state); return Math.max(1, state.budget.limits.wall_clock_seconds * 1000 - (Date.now() - Date.parse(state.started_at)));
 }
+export function workerTimeoutMs(state, role) {
+  const configured = state?.task?.workers?.[role]?.timeout_seconds;
+  const declared = configured === undefined ? 120000 : Math.floor(configured * 1000);
+  return Math.max(1000, Math.min(declared, remainingWallClockMs(state)));
+}
 export function validateTask(task) {
   for (const key of ['schema_version','task_id','intent','allowed_actions','allowed_paths','budget','protected_actions']) if (task[key] === undefined) throw new Error(`TASK_FIELD_MISSING:${key}`);
   assertSchemaVersion('task', task.schema_version);
@@ -345,6 +350,7 @@ export function validateTask(task) {
       const worker = task.workers?.[role];
       if (!worker || typeof worker.adapter !== 'string') throw new Error(`TASK_WORKER_INVALID:${role}`);
       if (worker.model !== undefined && typeof worker.model !== 'string') throw new Error(`TASK_WORKER_MODEL_INVALID:${role}`);
+      if (worker.timeout_seconds !== undefined && (!Number.isFinite(worker.timeout_seconds) || worker.timeout_seconds <= 0 || worker.timeout_seconds > 600)) throw new Error(`TASK_WORKER_TIMEOUT_INVALID:${role}`);
       if (worker.adapter === 'container') {
         if (typeof worker.image !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,255}$/.test(worker.image)) throw new Error(`TASK_CONTAINER_IMAGE_INVALID:${role}`);
         if (!/@sha256:[a-f0-9]{64}$/.test(worker.image)) throw new Error(`TASK_CONTAINER_IMAGE_DIGEST_REQUIRED:${role}`);

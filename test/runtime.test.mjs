@@ -8,8 +8,7 @@ import { execFileSync } from 'node:child_process';
 import {
   DATA_SCHEMA_VERSIONS, assertSchemaVersion, validateStateEnvelope, newLease, assertFreshLease, assertBudget, authorize, assertAllowedPath,
   createGateChallenge, canonicalGatePayload, verifyGateSignature, validateTask, canonicalAuthorizationReceipt, verifyAuthorizationReceipt,
-  ensureGitRepo, seedLocalGitWorkspace, cloneCandidateWorkspace, commitWorkspace, gitIdentity, assertWorkspaceIdentity, assertWorkerExecutionBoundary, assertVerificationExecutionBoundary, captureGitControlState, assertGitControlState
-} from '../runtime/core.mjs';
+  ensureGitRepo, seedLocalGitWorkspace, cloneCandidateWorkspace, commitWorkspace, gitIdentity, assertWorkspaceIdentity, assertWorkerExecutionBoundary, assertVerificationExecutionBoundary, captureGitControlState, assertGitControlState, workerTimeoutMs } from '../runtime/core.mjs';
 import { assertTransition } from '../runtime/state-machine.mjs';
 import { assertAdapterName } from '../runtime/adapters/registry.mjs';
 import { hostMatches, isPrivateAddress, checkNetworkTarget, assertNetworkMethod, validateNetworkPolicy } from '../runtime/network-policy.mjs';
@@ -32,6 +31,28 @@ test('expired lease is rejected', () => assert.throws(() => assertFreshLease(new
 test('fencing mismatch is rejected', () => assert.throws(() => assertFreshLease(newLease('t1',10000,5), 6), /FENCING_MISMATCH/));
 test('model budget exhaustion rejected', () => assert.throws(() => assertBudget({started_at:new Date().toISOString(),budget:{limits:{model_calls:1,wall_clock_seconds:10},used:{model_calls:1}}},{model_calls:1}), /BUDGET_EXCEEDED:model_calls/));
 test('wall-clock exhaustion rejected', () => assert.throws(() => assertBudget({started_at:new Date(Date.now()-5000).toISOString(),budget:{limits:{wall_clock_seconds:1},used:{}}}), /BUDGET_EXCEEDED:wall_clock_seconds/));
+test('worker timeout defaults to 120s and stays bounded by task wall clock', () => {
+  const baseState = {
+    started_at: new Date().toISOString(),
+    task: { workers: { builder: { adapter: 'opencode' }, reviewer: { adapter: 'opencode' } } },
+    budget: { limits: { model_calls: 4, wall_clock_seconds: 900, retries: 1 }, used: { model_calls: 0, retries: 0 } }
+  };
+  assert.equal(workerTimeoutMs(baseState,'builder'),120000);
+  const configured=structuredClone(baseState);
+  configured.task.workers.builder.timeout_seconds=300;
+  assert.equal(workerTimeoutMs(configured,'builder'),300000);
+  const short=structuredClone(configured);
+  short.budget.limits.wall_clock_seconds=2;
+  assert.ok(workerTimeoutMs(short,'builder') <= 2000);
+});
+
+test('worker timeout validation is fail-closed above 600 seconds', () => {
+  const base={schema_version:1,task_id:'worker-timeout',intent:'x',allowed_actions:['build_local'],allowed_paths:['src'],protected_actions:[],budget:{model_calls:1,wall_clock_seconds:900,retries:0},workers:{builder:{adapter:'opencode',timeout_seconds:300},reviewer:{adapter:'opencode'}}};
+  assert.doesNotThrow(()=>validateTask(base));
+  assert.throws(()=>validateTask({...base,workers:{...base.workers,builder:{...base.workers.builder,timeout_seconds:601}}}),/TASK_WORKER_TIMEOUT_INVALID:builder/);
+  assert.throws(()=>validateTask({...base,workers:{...base.workers,builder:{...base.workers.builder,timeout_seconds:0}}}),/TASK_WORKER_TIMEOUT_INVALID:builder/);
+});
+
 test('retry exhaustion rejected', () => assert.throws(() => assertBudget({started_at:new Date().toISOString(),budget:{limits:{retries:1,wall_clock_seconds:10},used:{retries:1}}},{retries:1}), /BUDGET_EXCEEDED:retries/));
 test('path policy rejects traversal and non-allowlisted files', () => {
   const task={allowed_paths:['demo-output/']};
