@@ -1,0 +1,48 @@
+name: BAR Remote Execution Reference
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/remote-execution-reference.yml'
+      - 'docs/25-REMOTE-EXECUTION.md'
+      - 'scripts/remote-execution-proof.mjs'
+      - 'test/remote-execution.test.mjs'
+      - 'runtime/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: remote-execution-reference-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reference:
+    name: Ephemeral remote worker proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BAR_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BAR_SOURCE_HEAD }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Prove remote execution boundary
+        run: node scripts/remote-execution-proof.mjs --out bar-proof/remote-execution.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bar-remote-execution-${{ github.run_id }}-${{ github.run_attempt }}
+          path: bar-proof/
+          if-no-files-found: error
+          retention-days: 7
