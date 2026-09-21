@@ -45,16 +45,19 @@ function resolveContainerImage(image) {
 }
 function workerSpec(role, adapter) {
   const model=option(`--${role}-model`);
-  if(adapter!=='container') return {adapter,...(model?{model}:{}),...(role==='builder'&&adapter==='codex'&&has('--builder-allow-user-config')?{allow_user_config:true}:{})};
+  const timeoutRaw=option(`--${role}-timeout-seconds`);
+  const timeout=timeoutRaw==null ? null : Number(timeoutRaw);
+  const common={...(model?{model}:{}),...(timeoutRaw!=null?{timeout_seconds:timeout}:{})};
+  if(adapter!=='container') return {adapter,...common,...(role==='builder'&&adapter==='codex'&&has('--builder-allow-user-config')?{allow_user_config:true}:{})};
   const requested=option(`--${role}-image`), command=option(`--${role}-command`);
   if(!requested||!command) throw new Error(`CONTAINER_CONFIG_REQUIRED:${role}:use --${role}-image and --${role}-command`);
   const image=requested.includes('@sha256:')?requested:resolveContainerImage(requested);
-  return {adapter,image,command,args:options(`--${role}-arg`),...(option(`--${role}-memory`)?{memory:option(`--${role}-memory`)}:{}),...(option(`--${role}-cpus`)?{cpus:option(`--${role}-cpus`)}:{})};
+  return {adapter,...common,image,command,args:options(`--${role}-arg`),...(option(`--${role}-memory`)?{memory:option(`--${role}-memory`)}:{}),...(option(`--${role}-cpus`)?{cpus:option(`--${role}-cpus`)}:{})};
 }
 
 function generateTask({ intentFlag = '--intent', defaultOut = 'bounded-task.json', defaultBuilder = 'demo', defaultReviewer = 'demo', label = 'TASK_WRITTEN', allowDemoScopeExpansion = true, verificationSemantics = null, exclusiveOut = false, ensureDefaultOutDir = false, rejectOutInsideSource = false } = {}) {
   const repoArg = option('--repo'); const intent = option(intentFlag);
-  if (!repoArg || !intent) throw new Error('USAGE:bar task --repo <git-repo> --intent <text> [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test] [--out task.json]');
+  if (!repoArg || !intent) throw new Error('USAGE:bar task --repo <git-repo> --intent <text> [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--builder-timeout-seconds 300] [--reviewer-timeout-seconds 120] [--verify npm --verify-arg test] [--out task.json]');
   const repo = path.resolve(repoArg); const top = git(repo, ['rev-parse','--show-toplevel']);
   if (git(top, ['status','--porcelain=v1','--untracked-files=all'])) throw new Error('SOURCE_REPO_DIRTY:commit or stash changes before creating a bounded task');
   const requestedBuilder = option('--builder', defaultBuilder); const requestedReviewer = option('--reviewer', defaultReviewer);
@@ -211,7 +214,7 @@ function friendlyError(message) {
 }
 function cliJsonDenial(reasonCode, requestedAction=null, message=reasonCode) { console.log(JSON.stringify({schema_version:'bar.authorization-denial.v1',status:'DENIED',retryable:false,reason_code:reasonCode,requested_action:requestedAction,message},null,2)); process.exitCode=2; }
 function help() {
-  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar work --repo <path> --goal <text> --allow <path> [--builder auto] [--reviewer auto] [--verify npm --verify-arg test] [--dry-run]\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action> [--json]\nbar verify-authorization <protected-action> [--json]\nbar receipt pubkey [--json]\nbar receipt verify <receipt.json> --pubkey <public.pem> [--json]\nbar candidate bundle <out.bundle>\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
+  console.log(`Bounded Agent Runtime CLI\n\nbar quickstart\nbar work --repo <path> --goal <text> --allow <path> [--builder auto] [--reviewer auto] [--builder-timeout-seconds 300] [--reviewer-timeout-seconds 120] [--verify npm --verify-arg test] [--dry-run]\nbar doctor [--json]\nbar agents [--json]\nbar task ... container: --builder container --builder-image <image> --builder-command <cmd> [--builder-arg <arg>]\nbar task --repo <path> --intent <text> --allow <path> [--allow <path>] [--builder auto|codex|claude|opencode|container|generic] [--reviewer auto|codex|claude|opencode|ollama|container|generic] [--builder-allow-user-config] [--builder-timeout-seconds 300] [--reviewer-timeout-seconds 120] [--verify npm --verify-arg test]\nbar run --task <task.json>\nbar status [--json]\nbar recover\nbar reset\nbar gate keygen [dir]\nbar gate sign <private.pem>\nbar approve <signature>\nbar authorize <protected-action> [--json]\nbar verify-authorization <protected-action> [--json]\nbar receipt pubkey [--json]\nbar receipt verify <receipt.json> --pubkey <public.pem> [--json]\nbar candidate bundle <out.bundle>\nbar dashboard [--port 4780]\nbar mcp\nbar net check <url> --policy <file>\nbar secret set <name>\nbar secret list`);
 }
 
 try {
