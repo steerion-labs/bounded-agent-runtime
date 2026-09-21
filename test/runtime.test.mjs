@@ -307,3 +307,52 @@ test('Git control snapshot detects packed-refs mutation', () => {
   fs.appendFileSync(path.join(repo,'.git','packed-refs'),'# tampered\n');
   assert.throws(()=>assertGitControlState(repo,snap),/GIT_CONTROL_STATE_TAMPERED:packed-refs/);
 });
+
+function makeSubmoduleSourceRepo() {
+  const child=fs.mkdtempSync(path.join(os.tmpdir(),'bar-submodule-child-'));
+  ensureGitRepo(child);
+  fs.mkdirSync(path.join(child,'lib'));
+  fs.writeFileSync(path.join(child,'lib','value.txt'),'submodule-base\n');
+  execFileSync('git',['add','.'],{cwd:child});
+  execFileSync('git',['commit','-q','-m','child-base'],{cwd:child});
+  const childHead=execFileSync('git',['rev-parse','HEAD'],{cwd:child,encoding:'utf8'}).trim();
+
+  const source=fs.mkdtempSync(path.join(os.tmpdir(),'bar-submodule-source-'));
+  ensureGitRepo(source);
+  fs.writeFileSync(path.join(source,'README.md'),'superproject\n');
+  execFileSync('git',['add','.'],{cwd:source});
+  execFileSync('git',['commit','-q','-m','super-base'],{cwd:source});
+  execFileSync('git',['-c','protocol.file.allow=always','submodule','add','-q',child,'components/lib'],{cwd:source});
+  execFileSync('git',['commit','-q','-am','add-submodule'],{cwd:source});
+  return {source,childHead};
+}
+
+test('seeded and candidate workspaces materialize pinned local submodules before Git control snapshots',()=>{
+  const {source,childHead}=makeSubmoduleSourceRepo();
+  const sourceHead=execFileSync('git',['rev-parse','HEAD'],{cwd:source,encoding:'utf8'}).trim();
+  const builder=fs.mkdtempSync(path.join(os.tmpdir(),'bar-submodule-builder-parent-'))+'-workspace';
+  seedLocalGitWorkspace({kind:'local_git',path:source,ref:sourceHead},builder);
+  assert.equal(fs.readFileSync(path.join(builder,'components/lib/lib/value.txt'),'utf8'),'submodule-base\n');
+  assert.equal(execFileSync('git',['rev-parse','HEAD'],{cwd:path.join(builder,'components/lib'),encoding:'utf8'}).trim(),childHead);
+  assert.equal(execFileSync('git',['status','--porcelain'],{cwd:builder,encoding:'utf8'}).trim(),'');
+  const snap=captureGitControlState(builder);
+  assert.doesNotThrow(()=>assertGitControlState(builder,snap));
+
+  const verification=fs.mkdtempSync(path.join(os.tmpdir(),'bar-submodule-verification-parent-'))+'-workspace';
+  cloneCandidateWorkspace(builder,verification,sourceHead);
+  assert.equal(fs.readFileSync(path.join(verification,'components/lib/lib/value.txt'),'utf8'),'submodule-base\n');
+  assert.equal(execFileSync('git',['status','--porcelain'],{cwd:verification,encoding:'utf8'}).trim(),'');
+  const verificationSnap=captureGitControlState(verification);
+  assert.doesNotThrow(()=>assertGitControlState(verification,verificationSnap));
+});
+
+test('submodule materialization fails closed when local source checkout drifts from pinned gitlink',()=>{
+  const {source}=makeSubmoduleSourceRepo();
+  const sub=path.join(source,'components/lib');
+  fs.writeFileSync(path.join(sub,'lib','value.txt'),'drift\n');
+  execFileSync('git',['add','.'],{cwd:sub});
+  execFileSync('git',['-c','user.name=BAR Test','-c','user.email=bar-test@invalid.example','commit','-q','-m','drift'],{cwd:sub});
+  const sourceHead=execFileSync('git',['rev-parse','HEAD'],{cwd:source,encoding:'utf8'}).trim();
+  const builder=fs.mkdtempSync(path.join(os.tmpdir(),'bar-submodule-drift-parent-'))+'-workspace';
+  assert.throws(()=>seedLocalGitWorkspace({kind:'local_git',path:source,ref:sourceHead},builder),/SOURCE_SUBMODULE_REF_MISMATCH:components\/lib/);
+});
