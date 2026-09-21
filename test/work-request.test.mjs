@@ -44,6 +44,28 @@ test('work dry-run resolves and retains an auditable bounded task without contro
   assert.equal(task.verification.semantics, 'OPERATOR_DECLARED_COMMAND_EXECUTION_ONLY');
 });
 
+test('work dry-run binds explicit bounded worker timeouts into task authority', () => {
+  const src = sourceRepo();
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'bar-work-timeout-'));
+  const root = path.join(cwd, 'runtime');
+  const out = path.join(cwd, 'work.json');
+  const env = { ...process.env, BOUNDED_AGENT_RUNTIME_ROOT: root };
+  const result = run(['work','--repo',src,'--goal','Fix x','--allow','src','--allow','demo-output','--builder','demo','--reviewer','demo','--builder-timeout-seconds','300','--reviewer-timeout-seconds','90','--verify','node','--verify-arg=--test','--verify-arg','verify.test.mjs','--dry-run','--out',out], cwd, env);
+  assert.equal(result.status, 0, result.stderr);
+  const task = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.equal(task.workers.builder.timeout_seconds, 300);
+  assert.equal(task.workers.reviewer.timeout_seconds, 90);
+});
+
+test('work rejects worker timeout above bounded maximum', () => {
+  const src = sourceRepo();
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'bar-work-timeout-invalid-'));
+  const env = { ...process.env, BOUNDED_AGENT_RUNTIME_ROOT: path.join(cwd, 'runtime') };
+  const result = run(['work','--repo',src,'--goal','Fix x','--allow','src','--allow','demo-output','--builder','demo','--reviewer','demo','--builder-timeout-seconds','601','--verify','node','--verify-arg=--test','--verify-arg','verify.test.mjs','--dry-run'], cwd, env);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /TASK_WORKER_TIMEOUT_INVALID:builder/);
+});
+
 test('work refuses implicit write scope', () => {
   const src = sourceRepo();
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'bar-work-scope-'));

@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import {
   STATE_FILE, CORE_DIR, BUILDER_DIR, REVIEWER_DIR, VERIFICATION_DIR, ensureRuntimeDir, assertProtectedRootConfigured,
   loadState, saveState, journal, transition, newLease, assertCurrentLease, assertCurrentFence, acquireControllerLock, releaseControllerLock, cleanupControllerHooks, claimControllerLease, sha256,
-  validateTask, authorize, assertWorkerExecutionBoundary, assertVerificationExecutionBoundary, spendBudget, remainingWallClockMs, evidence, verifyEvidence, verifyStateEvidence,
+  validateTask, authorize, assertWorkerExecutionBoundary, assertVerificationExecutionBoundary, spendBudget, remainingWallClockMs, workerTimeoutMs, evidence, verifyEvidence, verifyStateEvidence,
   ensureGitRepo, seedLocalGitWorkspace, cloneReviewerWorkspace, cloneCandidateWorkspace, commitWorkspace, assertWorkspaceIdentity, assertWorkspaceScope, changedWorkspacePaths, gitExec, captureGitControlState, assertGitControlState,
   createGateChallenge, createHumanApproval, assertHumanApproval, approvalExpiresAt, signAuthorizationReceipt, authorizationReceiptPublicKey, recoverState,
   readJson, resetDemoRuntime
@@ -51,7 +51,7 @@ function runAdapter(state, adapterName, role, input, label) {
   for (let attempt = 0; attempt <= state.budget.limits.retries; attempt += 1) {
     if (attempt > 0) spendBudget(state, { retries: 1 });
     spendBudget(state, { model_calls: 1 });
-    const timeout = Math.min(remainingWallClockMs(state), 120000);
+    const timeout = workerTimeoutMs(state, role);
     const payload = { ...input, adapter: adapterName, role, generic: adapterName === 'generic' ? genericConfig() : null, timeout_ms: Math.max(1000, timeout - 500) };
     const result = spawnSync(process.execPath, [adapterPath(file)], { input: JSON.stringify(payload), encoding: 'utf8', timeout, env: workerEnv(role), windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
     if (result.status === 0) { try { return JSON.parse(result.stdout); } catch { lastError = new Error(`${label}_INVALID_JSON`); } }

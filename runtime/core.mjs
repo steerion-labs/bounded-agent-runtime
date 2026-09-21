@@ -308,6 +308,11 @@ export function spendBudget(state, delta = {}) {
 export function remainingWallClockMs(state) {
   assertBudget(state); return Math.max(1, state.budget.limits.wall_clock_seconds * 1000 - (Date.now() - Date.parse(state.started_at)));
 }
+export function workerTimeoutMs(state, role) {
+  const configured = state?.task?.workers?.[role]?.timeout_seconds;
+  const declared = configured === undefined ? 120000 : Math.floor(configured * 1000);
+  return Math.max(1000, Math.min(declared, remainingWallClockMs(state)));
+}
 export function validateTask(task) {
   for (const key of ['schema_version','task_id','intent','allowed_actions','allowed_paths','budget','protected_actions']) if (task[key] === undefined) throw new Error(`TASK_FIELD_MISSING:${key}`);
   assertSchemaVersion('task', task.schema_version);
@@ -345,6 +350,7 @@ export function validateTask(task) {
       const worker = task.workers?.[role];
       if (!worker || typeof worker.adapter !== 'string') throw new Error(`TASK_WORKER_INVALID:${role}`);
       if (worker.model !== undefined && typeof worker.model !== 'string') throw new Error(`TASK_WORKER_MODEL_INVALID:${role}`);
+      if (worker.timeout_seconds !== undefined && (!Number.isFinite(worker.timeout_seconds) || worker.timeout_seconds <= 0 || worker.timeout_seconds > 600)) throw new Error(`TASK_WORKER_TIMEOUT_INVALID:${role}`);
       if (worker.adapter === 'container') {
         if (typeof worker.image !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,255}$/.test(worker.image)) throw new Error(`TASK_CONTAINER_IMAGE_INVALID:${role}`);
         if (!/@sha256:[a-f0-9]{64}$/.test(worker.image)) throw new Error(`TASK_CONTAINER_IMAGE_DIGEST_REQUIRED:${role}`);
@@ -491,6 +497,62 @@ export function detachWorkspaceRemotes(repo) {
   if (gitExec(repo, ['remote']).trim()) throw new Error('GIT_REMOTE_DETACH_FAILED');
   return remotes;
 }
+function localSubmodulePaths(repo) {
+  const modules=path.join(repo,'.gitmodules');
+  if (!fs.existsSync(modules)) return [];
+  let raw='';
+  try {
+    raw=execFileSync('git',['-C',repo,'config','-f','.gitmodules','--get-regexp','^submodule\\..*\\.path$'],
+      {encoding:'utf8',timeout:10000,env:safeGitEnv(),stdio:['ignore','pipe','pipe']}).trim();
+  } catch (error) {
+    if (error?.status === 1) return [];
+    throw error;
+  }
+  return splitLines(raw).map(row=>{
+    const cut=row.search(/\s/);
+    const value=cut<0?'':row.slice(cut).trim();
+    const normalized=value.replace(/\\/g,'/');
+    if (!normalized || path.isAbsolute(value) || normalized.split('/').some(part=>!part||part==='.'||part==='..')) throw new Error('SUBMODULE_PATH_INVALID:' + value);
+    return normalized;
+  });
+}
+function gitlinkSha(repo, relativePath) {
+  const row=gitExec(repo,['ls-tree','HEAD','--',relativePath]);
+  const match=/^160000\s+commit\s+([a-f0-9]{40})\t/.exec(row);
+  if (!match) throw new Error('SUBMODULE_GITLINK_INVALID:' + relativePath);
+  return match[1];
+}
+function materializeLocalSubmodules(sourceRepo, targetRepo) {
+  const sourceRoot=fs.realpathSync(sourceRepo);
+  const targetRoot=fs.realpathSync(targetRepo);
+  const paths=localSubmodulePaths(targetRepo);
+  for (const relativePath of paths) {
+    const expected=gitlinkSha(targetRepo,relativePath);
+    const sourceCandidate=path.join(sourceRoot,...relativePath.split('/'));
+    if (!fs.existsSync(sourceCandidate)) throw new Error('SOURCE_SUBMODULE_NOT_MATERIALIZED:' + relativePath);
+    const sourceInfo=fs.lstatSync(sourceCandidate);
+    if (!sourceInfo.isDirectory() || sourceInfo.isSymbolicLink()) throw new Error('SOURCE_SUBMODULE_INVALID:' + relativePath);
+    const sourcePath=fs.realpathSync(sourceCandidate);
+    if (sourcePath!==sourceRoot && !sourcePath.startsWith(sourceRoot+path.sep)) throw new Error('SOURCE_SUBMODULE_ESCAPE:' + relativePath);
+    let observed;
+    try { observed=gitExec(sourcePath,['rev-parse','HEAD']); }
+    catch { throw new Error('SOURCE_SUBMODULE_NOT_GIT_REPO:' + relativePath); }
+    if (observed!==expected) throw new Error('SOURCE_SUBMODULE_REF_MISMATCH:' + relativePath);
+
+    const targetPath=path.join(targetRoot,...relativePath.split('/'));
+    fs.rmSync(targetPath,{recursive:true,force:true});
+    fs.mkdirSync(path.dirname(targetPath),{recursive:true});
+    execFileSync('git',['-c','protocol.file.allow=always','clone','-q','--no-hardlinks','--no-checkout',sourcePath,targetPath],
+      {timeout:30000,env:safeGitEnv(),stdio:['ignore','pipe','pipe']});
+    gitExec(targetPath,['checkout','-q','--detach',expected],{timeout:20000});
+    detachWorkspaceRemotes(targetPath);
+    gitExec(targetPath,['config','core.autocrlf','false']);
+    materializeLocalSubmodules(sourcePath,targetPath);
+    assertWorkspaceTreeSafe(targetPath);
+  }
+  return paths;
+}
+
 export function seedLocalGitWorkspace(source, workspace) {
   if (!source || source.kind !== 'local_git' || typeof source.path !== 'string' || !path.isAbsolute(source.path)) throw new Error('TASK_SOURCE_INVALID');
   const sourcePath = fs.realpathSync(source.path);
@@ -502,6 +564,7 @@ export function seedLocalGitWorkspace(source, workspace) {
   execFileSync('git', ['-c','protocol.file.allow=always','clone','-q','--no-hardlinks','--no-checkout',sourcePath,workspace], { timeout: 30000, env: safeGitEnv(), stdio: ['ignore','pipe','pipe'] });
   const ref = source.ref || 'HEAD';
   gitExec(workspace, ['checkout','-q','--detach',ref], { timeout: 20000 });
+  materializeLocalSubmodules(sourcePath, workspace);
   detachWorkspaceRemotes(workspace);
   gitExec(workspace, ['config','core.autocrlf','false']);
   gitExec(workspace, ['config','user.name','Bounded Agent Builder']);
@@ -516,6 +579,7 @@ export function cloneCandidateWorkspace(builderWorkspace, targetWorkspace, candi
   fs.mkdirSync(path.dirname(targetWorkspace), { recursive: true });
   execFileSync('git', ['-c','protocol.file.allow=always','clone','-q','--no-hardlinks','--no-checkout',builderWorkspace,targetWorkspace], { timeout: 30000, env: safeGitEnv(), stdio: ['ignore','pipe','pipe'] });
   gitExec(targetWorkspace, ['checkout','-q','--detach',candidateSha], { timeout: 20000 });
+  materializeLocalSubmodules(builderWorkspace, targetWorkspace);
   detachWorkspaceRemotes(targetWorkspace);
   assertWorkspaceTreeSafe(targetWorkspace);
   return gitIdentity(targetWorkspace);
