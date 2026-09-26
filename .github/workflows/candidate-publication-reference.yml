@@ -37,7 +37,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Prove candidate publication boundary
         run: node scripts/candidate-publication-proof.mjs --out bar-proof/candidate-publication.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bar-candidate-publication-${{ github.run_id }}-${{ github.run_attempt }}
