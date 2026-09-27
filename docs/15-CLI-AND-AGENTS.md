@@ -62,6 +62,7 @@ On Windows, BAR resolves native executables and standard npm `.cmd` shims to the
 bar run --task bounded-task.json
 bar status
 bar recover
+bar review-resume --candidate <sha> --tree <sha> --source-head <sha|none> --state-version <n> [--json]
 ```
 
 A successful build/review flow stops at `HUMAN_GATE_REQUIRED`. Starting another task requires an explicit `bar reset` in demo mode.

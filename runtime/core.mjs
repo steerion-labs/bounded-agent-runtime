@@ -33,7 +33,8 @@ export const DATA_SCHEMA_VERSIONS = Object.freeze({
   gate_challenge: 'bar.gate-challenge.v1',
   human_approval: 'bar.human-approval.v1',
   nonce_ledger: 'bar.nonce-ledger.v1',
-  authorization_receipt: 'bar.authorization-receipt.v3'
+  authorization_receipt: 'bar.authorization-receipt.v3',
+  review_resume: 'bar.review-resume.v1'
 });
 export function assertSchemaVersion(kind, value) {
   const expected = DATA_SCHEMA_VERSIONS[kind];
@@ -157,8 +158,17 @@ export function validateStateEnvelope(state) {
   if (state.human_approval != null) validateHumanApprovalEnvelope(state.human_approval, state);
   if (!Array.isArray(state.evidence)) throw new Error('STATE_EVIDENCE_INVALID');
   for (const item of state.evidence) validateEvidenceEnvelope(item, state);
+  if (state.review_resume != null) validateReviewResumeEnvelope(state.review_resume);
   assertRequiredEvidence(state);
   return state;
+}
+export const REVIEW_RESUME_MAX_ATTEMPTS = 3;
+function validateReviewResumeEnvelope(resume) {
+  if (!resume || typeof resume !== 'object') throw new Error('REVIEW_RESUME_ENVELOPE_INVALID');
+  assertSchemaVersion('review_resume', resume.schema_version);
+  if (!Number.isSafeInteger(resume.attempts) || resume.attempts < 1 || resume.attempts > REVIEW_RESUME_MAX_ATTEMPTS || typeof resume.active !== 'boolean' || !validTimestamp(resume.started_at) || !resume.used || typeof resume.used !== 'object') throw new Error('REVIEW_RESUME_ENVELOPE_INVALID');
+  for (const key of ['model_calls','retries']) if (!Number.isSafeInteger(resume.used[key] ?? 0) || (resume.used[key] ?? 0) < 0) throw new Error('REVIEW_RESUME_ENVELOPE_INVALID');
+  return resume;
 }
 export function loadState() {
   if (!fs.existsSync(STATE_FILE)) throw new Error('RUNTIME_NOT_INITIALIZED');
@@ -292,21 +302,31 @@ export function claimControllerLease(state) {
   journal('LEASE_ACQUIRED', { task_id: state.task_id, generation: state.lease.generation, fencing_token_hash: sha256(state.lease.fencing_token), owner: state.lease.owner, expires_at: state.lease.expires_at });
   return state.lease;
 }
+// An active review-only resume runs in its own window: the task's unchanged limits apply to
+// that single bounded review attempt, and the number of attempts is capped
+// (REVIEW_RESUME_MAX_ATTEMPTS). Outside a resume the original task window applies.
+function budgetWindow(state) {
+  const resume = state?.review_resume;
+  if (resume?.active === true) return { started_at: resume.started_at, used: resume.used };
+  return { started_at: state?.started_at, used: state?.budget?.used };
+}
 export function assertBudget(state, delta = {}) {
   const wall = state.budget?.limits?.wall_clock_seconds;
-  if (state.started_at && Number.isFinite(wall) && Date.now() - Date.parse(state.started_at) > wall * 1000) throw new Error('BUDGET_EXCEEDED:wall_clock_seconds');
+  const window = budgetWindow(state);
+  if (window.started_at && Number.isFinite(wall) && Date.now() - Date.parse(window.started_at) > wall * 1000) throw new Error('BUDGET_EXCEEDED:wall_clock_seconds');
   for (const [key, value] of Object.entries(delta)) {
-    const limit = state.budget?.limits?.[key] ?? 0, used = state.budget?.used?.[key] ?? 0;
+    const limit = state.budget?.limits?.[key] ?? 0, used = window.used?.[key] ?? 0;
     if (used + value > limit) throw new Error(`BUDGET_EXCEEDED:${key}`);
   }
 }
 export function spendBudget(state, delta = {}) {
   assertBudget(state, delta);
-  for (const [key, value] of Object.entries(delta)) state.budget.used[key] = (state.budget.used[key] ?? 0) + value;
+  const used = budgetWindow(state).used;
+  for (const [key, value] of Object.entries(delta)) used[key] = (used[key] ?? 0) + value;
   saveState(state);
 }
 export function remainingWallClockMs(state) {
-  assertBudget(state); return Math.max(1, state.budget.limits.wall_clock_seconds * 1000 - (Date.now() - Date.parse(state.started_at)));
+  assertBudget(state); return Math.max(1, state.budget.limits.wall_clock_seconds * 1000 - (Date.now() - Date.parse(budgetWindow(state).started_at)));
 }
 export function workerTimeoutMs(state, role) {
   const configured = state?.task?.workers?.[role]?.timeout_seconds;
