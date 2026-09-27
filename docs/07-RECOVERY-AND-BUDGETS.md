@@ -46,3 +46,5 @@ The lock serializes runtime state, journal, approval/nonce and protected-authori
 BAR can repair a single journal/state write skew, but it does not silently resume a Builder, verifier or Reviewer stage after a process crash. Intermediate workflow states fail closed with `SAFE_RESUME_REQUIRED`.
 
 In demo mode, reset and re-run from a fresh task. In protected mode, preserve the runtime root and evidence and use an operator-reviewed recovery procedure rather than resetting security state.
+
+The one explicit exception is the **Reviewer** stage. A candidate that is already built and controller-verified, stopped in `REVIEWING` by a Reviewer outage, can be reviewed later with `bar review-resume`, without running the Builder again. That command never resumes silently: the caller must restate the exact binding, and any mismatch fails closed. See [27-REVIEW-ONLY-RESUME.md](27-REVIEW-ONLY-RESUME.md).

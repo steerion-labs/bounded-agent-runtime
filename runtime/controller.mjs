@@ -8,7 +8,7 @@ import {
   validateTask, authorize, assertWorkerExecutionBoundary, assertVerificationExecutionBoundary, spendBudget, remainingWallClockMs, workerTimeoutMs, evidence, verifyEvidence, verifyStateEvidence,
   ensureGitRepo, seedLocalGitWorkspace, cloneReviewerWorkspace, cloneCandidateWorkspace, commitWorkspace, assertWorkspaceIdentity, assertWorkspaceScope, changedWorkspacePaths, gitExec, captureGitControlState, assertGitControlState,
   createGateChallenge, createHumanApproval, assertHumanApproval, approvalExpiresAt, signAuthorizationReceipt, authorizationReceiptPublicKey, recoverState,
-  readJson, resetDemoRuntime
+  readJson, resetDemoRuntime, REVIEW_RESUME_MAX_ATTEMPTS, assertWorkspaceTreeSafe
 } from './core.mjs';
 import { assertAdapterName, resolveAdapter } from './adapters/registry.mjs';
 
@@ -148,8 +148,16 @@ function run() {
   const verificationEvidence = evidence('controller_verification', { candidate_sha: state.candidate_sha, tree_hash: state.tree_hash, commands_declared: verification.commands_declared, results: verification.results }, state, 'controller', 'CONTROLLER_VERIFIED');
   verifyEvidence(verificationEvidence, state); transition(state, 'HANDOFF_VALIDATION', verificationEvidence);
   transition(state, 'REVIEWING');
+  reviewCandidate(state, workspace, identity);
+  console.log('HUMAN_GATE_REQUIRED'); console.log(JSON.stringify(state.gate_challenge, null, 2));
+}
+// Independent review of the exact bound candidate, from REVIEWING up to the Human Gate.
+// Shared by `run` and `review-resume` so both produce the same review evidence.
+function reviewCandidate(state, workspace, identity, extraEvidence = {}) {
+  if (state.state !== 'REVIEWING') throw new Error(`REVIEW_STATE_INVALID:${state.state}`);
   const candidate = { task_id: state.task_id, candidate_sha: state.candidate_sha, tree_hash: state.tree_hash };
   const reviewerWorkspace = path.join(REVIEWER_DIR, state.task_id);
+  if (path.resolve(reviewerWorkspace) === path.resolve(workspace)) throw new Error('REVIEWER_WORKSPACE_NOT_SEPARATE');
   const reviewerIdentity = cloneReviewerWorkspace(workspace, reviewerWorkspace, state.candidate_sha);
   if (reviewerIdentity.candidate_sha !== state.candidate_sha || reviewerIdentity.tree_hash !== state.tree_hash) throw new Error('REVIEWER_WORKSPACE_BINDING_MISMATCH');
   const reviewerGitControl = captureGitControlState(reviewerWorkspace);
@@ -164,13 +172,105 @@ function run() {
   assertWorkspaceIdentity(state, reviewerWorkspace); assertCurrentLease(state); assertWorkspaceIdentity(state, workspace);
   if (review.decision !== 'APPROVE') throw new Error(`REVIEW_BLOCKED:${review.reason ?? 'unknown'}`);
   if (review.reviewed_candidate_sha !== state.candidate_sha || review.reviewed_tree_hash !== state.tree_hash) throw new Error('REVIEW_BINDING_MISMATCH');
-  const reviewEvidence = evidence('review_observation', { ...review, ...identity, worker_adapter: reviewerAdapter, worker_config_hash: workerConfigHash(state, 'reviewer'), separate_workspace: true }, state, `reviewer:${reviewerAdapter}`, 'CONTROLLER_OBSERVED');
+  const reviewEvidence = evidence('review_observation', { ...review, ...identity, worker_adapter: reviewerAdapter, worker_config_hash: workerConfigHash(state, 'reviewer'), separate_workspace: true, ...extraEvidence }, state, `reviewer:${reviewerAdapter}`, 'CONTROLLER_OBSERVED');
   verifyEvidence(reviewEvidence, state); transition(state, 'REVIEW_READY', reviewEvidence);
   assertWorkspaceIdentity(state, workspace);
   transition(state, 'HUMAN_GATE');
   state.gate_challenge = createGateChallenge(state); saveState(state);
   journal('HUMAN_GATE_CHALLENGE', { task_id: state.task_id, state_version: state.state_version, nonce_hash: state.gate_challenge.nonce ? 'PRESENT' : 'MISSING' });
-  console.log('HUMAN_GATE_REQUIRED'); console.log(JSON.stringify(state.gate_challenge, null, 2));
+  return state;
+}
+
+// Review-only resume (issue #81): after a Reviewer outage, review the already built and
+// controller-verified candidate later WITHOUT running the Builder again. The caller must
+// restate the exact binding (candidate, tree, source HEAD, state version); every mismatch,
+// replay, missing evidence or drifted workspace fails closed. It advances at most to the
+// existing Human Gate and never performs a protected action.
+const RESUME_FLAGS = Object.freeze({ '--candidate': 'candidate_sha', '--tree': 'tree_hash', '--source-head': 'source_head', '--state-version': 'state_version' });
+const SHA40 = /^[a-f0-9]{40}$/;
+function parseReviewResumeRequest(args) {
+  const request = {}; const seen = new Set();
+  for (let index = 0; index < args.length; index += 1) {
+    const flag = args[index];
+    if (flag === '--json') { if (seen.has(flag)) throw new Error('REVIEW_RESUME_ARGUMENT_DUPLICATE:--json'); seen.add(flag); continue; }
+    if (!Object.hasOwn(RESUME_FLAGS, flag)) throw new Error(`REVIEW_RESUME_ARGUMENT_FORBIDDEN:${String(flag).slice(0, 40)}`);
+    if (seen.has(flag)) throw new Error(`REVIEW_RESUME_ARGUMENT_DUPLICATE:${flag}`);
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith('--')) throw new Error(`REVIEW_RESUME_ARGUMENT_VALUE_REQUIRED:${flag}`);
+    seen.add(flag); request[RESUME_FLAGS[flag]] = value; index += 1;
+  }
+  for (const flag of Object.keys(RESUME_FLAGS)) if (!seen.has(flag)) throw new Error(`REVIEW_RESUME_ARGUMENT_REQUIRED:${flag}`);
+  if (!SHA40.test(request.candidate_sha)) throw new Error('REVIEW_RESUME_REQUEST_MALFORMED:candidate_sha');
+  if (!SHA40.test(request.tree_hash)) throw new Error('REVIEW_RESUME_REQUEST_MALFORMED:tree_hash');
+  if (request.source_head !== 'none' && !SHA40.test(request.source_head)) throw new Error('REVIEW_RESUME_REQUEST_MALFORMED:source_head');
+  if (!/^(0|[1-9][0-9]{0,15})$/.test(request.state_version)) throw new Error('REVIEW_RESUME_REQUEST_MALFORMED:state_version');
+  request.state_version = Number(request.state_version);
+  return request;
+}
+function resumeBuilderWorkspace(state) {
+  // The runtime root may be relocated as a whole (for example parked in a review queue).
+  // Only the canonical builder workspace of this task under the current root is accepted;
+  // its identity is then proven from Git plus HMAC-bound evidence, never from the path.
+  const canonical = path.join(BUILDER_DIR, state.task_id);
+  const recorded = String(state.workspace_path ?? '');
+  if (path.resolve(recorded) !== path.resolve(canonical)) {
+    if (path.basename(recorded) !== state.task_id || path.basename(path.dirname(recorded)) !== path.basename(BUILDER_DIR)) throw new Error('REVIEW_RESUME_WORKSPACE_INVALID');
+    journal('REVIEW_RESUME_RUNTIME_RELOCATED', { task_id: state.task_id, from_hash: sha256(path.resolve(recorded)), to: canonical });
+    state.workspace_path = canonical; saveState(state);
+  }
+  if (!fs.existsSync(canonical)) throw new Error('REVIEW_RESUME_CANDIDATE_MISSING');
+  return canonical;
+}
+function reviewResume(args) {
+  const request = parseReviewResumeRequest(args);
+  const state = loadState(); recoverState(state); validateTask(state.task);
+  if (state.state !== 'REVIEWING') throw new Error(`REVIEW_RESUME_STATE_INVALID:${state.state}`);
+  if (state.evidence.some(item => item.claim === 'review_observation') || state.gate_challenge || state.human_approval) throw new Error('REVIEW_RESUME_REPLAY');
+  if (request.state_version !== state.state_version) throw new Error('REVIEW_RESUME_BINDING_MISMATCH:state_version');
+  if (request.candidate_sha !== state.candidate_sha) throw new Error('REVIEW_RESUME_BINDING_MISMATCH:candidate_sha');
+  if (request.tree_hash !== state.tree_hash) throw new Error('REVIEW_RESUME_BINDING_MISMATCH:tree_hash');
+  if (request.source_head !== (state.base_sha ?? 'none')) throw new Error('REVIEW_RESUME_BINDING_MISMATCH:source_head');
+  verifyStateEvidence(state);
+  for (const claim of ['builder_candidate','controller_verification']) {
+    const proofs = state.evidence.filter(item => item.claim === claim);
+    if (proofs.length !== 1 || proofs[0].producer_identity !== 'controller' || proofs[0].trust_class !== 'CONTROLLER_VERIFIED') throw new Error(`REVIEW_RESUME_EVIDENCE_INVALID:${claim}`);
+  }
+  const workspace = resumeBuilderWorkspace(state);
+  assertWorkspaceIdentity(state, workspace);
+  if (state.base_sha && gitExec(workspace, ['rev-parse','HEAD^']) !== state.base_sha) throw new Error('BASE_PARENT_DRIFT');
+  assertWorkspaceTreeSafe(workspace); assertWorkspaceScope(state.task, workspace, state.base_sha);
+  const attempts = (state.review_resume?.attempts ?? 0) + 1;
+  if (attempts > REVIEW_RESUME_MAX_ATTEMPTS) throw new Error('REVIEW_RESUME_ATTEMPTS_EXHAUSTED');
+  // A new controller lease generation fences out any older controller of this task.
+  claimControllerLease(state);
+  state.review_resume = { schema_version: 'bar.review-resume.v1', attempts, active: true, started_at: new Date().toISOString(), used: { model_calls: 0, retries: 0 } };
+  saveState(state);
+  journal('REVIEW_RESUME_STARTED', { task_id: state.task_id, attempt: attempts, candidate_sha: state.candidate_sha, tree_hash: state.tree_hash, source_head: state.base_sha ?? null, state_version: state.state_version, lease_generation: state.lease.generation });
+  assertCurrentLease(state); remainingWallClockMs(state);
+  try {
+    reviewCandidate(state, workspace, { candidate_sha: state.candidate_sha, tree_hash: state.tree_hash }, { review_resume_attempt: attempts });
+  } catch (error) {
+    // A failed attempt closes its window; the next attempt needs a new request and window.
+    // On success the window stays in force, exactly like the run window for the normal path.
+    state.review_resume = { ...state.review_resume, active: false }; saveState(state);
+    throw error;
+  }
+  journal('REVIEW_RESUME_COMPLETED', { task_id: state.task_id, attempt: attempts, state_version: state.state_version });
+  return { state, attempts };
+}
+function reviewResumeCommand(args) {
+  const { state, attempts } = reviewResume(args);
+  const result = { schema_version: 'bar.review-resume-result.v1', status: 'HUMAN_GATE_REQUIRED', task_id: state.task_id, candidate_sha: state.candidate_sha, tree_hash: state.tree_hash, source_head: state.base_sha ?? null, state_version: state.state_version, lease_generation: state.lease.generation, attempt: attempts, builder_invoked: false, protected_effects_attempted: false, gate_challenge: state.gate_challenge };
+  if (args.includes('--json')) console.log(JSON.stringify(result, null, 2));
+  else { console.log('HUMAN_GATE_REQUIRED'); console.log(JSON.stringify(state.gate_challenge, null, 2)); }
+}
+const REVIEWER_OUTAGE = /^(REVIEWER_(TIMEOUT|FAILED|INVALID_JSON)|[A-Z_]+_REVIEWER_(TIMEOUT|FAILED))/;
+function reviewResumeFailure(message) {
+  const reason = String(message).split(':')[0];
+  if (['CONTROLLER_LOCKED','CONTROLLER_LOCK_ACQUIRE_FAILED','CONTROLLER_LOCK_TAKEOVER_FAILED'].includes(reason)) return { status: 'UNAVAILABLE', retryable: true, exit: 3, reason };
+  if (REVIEWER_OUTAGE.test(String(message))) return { status: 'REVIEWER_UNAVAILABLE', retryable: true, exit: 3, reason };
+  if (reason === 'REVIEW_BLOCKED') return { status: 'REVIEW_BLOCKED', retryable: false, exit: 4, reason };
+  return { status: 'DENIED', retryable: false, exit: 2, reason };
 }
 function approve(signature) {
   const state = loadState(); recoverState(state);
@@ -226,7 +326,7 @@ function verifyProtectedCommand(action) {
 function reset() { console.log(resetDemoRuntime()); }
 let controllerLock = null;
 try {
-  if (['init','run','approve','recover','authorize-protected'].includes(command)) controllerLock = acquireControllerLock();
+  if (['init','run','approve','recover','authorize-protected','review-resume'].includes(command)) controllerLock = acquireControllerLock();
   if (command === 'init') init(arg);
   else if (command === 'run') run();
   else if (command === 'approve') approve(arg);
@@ -234,10 +334,16 @@ try {
   else if (command === 'authorize-protected') authorizeProtected(arg);
   else if (command === 'verify-authorization') verifyProtectedCommand(arg);
   else if (command === 'reset') reset();
-  else throw new Error('USAGE:init <task.json> | run | approve <signature> | authorize-protected <action> [--json] | verify-authorization <action> [--json] | recover | reset');
+  else if (command === 'review-resume') reviewResumeCommand(process.argv.slice(3));
+  else throw new Error('USAGE:init <task.json> | run | approve <signature> | authorize-protected <action> [--json] | verify-authorization <action> [--json] | review-resume --candidate <sha> --tree <sha> --source-head <sha|none> --state-version <n> [--json] | recover | reset');
 } catch (error) {
   const message=error instanceof Error ? error.message : String(error);
-  if (['authorize-protected','verify-authorization'].includes(command) && process.argv.includes('--json')) {
+  if (command === 'review-resume') {
+    const outcome = reviewResumeFailure(message);
+    if (process.argv.includes('--json')) console.log(JSON.stringify({ schema_version: 'bar.review-resume-result.v1', status: outcome.status, retryable: outcome.retryable, reason_code: outcome.reason, builder_invoked: false, protected_effects_attempted: false, message: String(message).slice(0, 2000) }, null, 2));
+    else console.error(message);
+    process.exitCode = outcome.exit;
+  } else if (['authorize-protected','verify-authorization'].includes(command) && process.argv.includes('--json')) {
     const reason=String(message).split(':')[0]; const unavailable=['CONTROLLER_LOCKED','CONTROLLER_LOCK_ACQUIRE_FAILED','CONTROLLER_LOCK_TAKEOVER_FAILED'].includes(reason);
     console.log(JSON.stringify({schema_version:unavailable?'bar.authorization-unavailable.v1':'bar.authorization-denial.v1',status:unavailable?'UNAVAILABLE':'DENIED',retryable:unavailable,reason_code:reason,requested_action:arg ?? null,message},null,2));
     process.exitCode=unavailable?3:2;
