@@ -39,7 +39,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Prove remote execution boundary
         run: node scripts/remote-execution-proof.mjs --out bar-proof/remote-execution.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bar-remote-execution-${{ github.run_id }}-${{ github.run_attempt }}
