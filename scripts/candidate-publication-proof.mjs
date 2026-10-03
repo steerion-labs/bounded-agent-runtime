@@ -53,14 +53,13 @@ const replay=verifyCandidatePublicationReceipt({
   request,receipt,currentLease:lease,currentBaseHead:sourceHead,ledger
 });
 
-let baseDriftRejected=false, branchCollisionRejected=false, protectedActionRejected=false;
-try {
-  verifyCandidatePublicationReceipt({
-    request,receipt,currentLease:lease,currentBaseHead:'0'.repeat(40),ledger:createCandidatePublicationLedger()
-  });
-} catch(error) {
-  baseDriftRejected=/CANDIDATE_PUBLISH_BASE_HEAD_DRIFT/.test(String(error.message));
-}
+const advancedBase=verifyCandidatePublicationReceipt({
+  request,receipt,currentLease:lease,currentBaseHead:'0'.repeat(40),ledger:createCandidatePublicationLedger()
+});
+const baseAdvancePreserved=advancedBase.status==='PASS' &&
+  advancedBase.baseAdvanced===true &&
+  advancedBase.currentBaseHead==='0'.repeat(40);
+let branchCollisionRejected=false, protectedActionRejected=false;
 try {
   createCandidatePublicationRequest({
     operationId:'bad-protected-action',
@@ -105,7 +104,7 @@ try {
 const status=
   verified.status==='PASS' &&
   replay.idempotentReplay===true &&
-  baseDriftRejected &&
+  baseAdvancePreserved &&
   branchCollisionRejected &&
   protectedActionRejected
     ? 'PASS'
@@ -131,7 +130,8 @@ const evidence={
   deployAttempted:false,
   releaseAttempted:false,
   idempotentReplayVerified:replay.idempotentReplay===true,
-  baseDriftRejected,
+  baseAdvancePreserved,
+  observedAdvancedBaseHead:advancedBase.currentBaseHead,
   branchCollisionRejected,
   protectedActionRejected
 };

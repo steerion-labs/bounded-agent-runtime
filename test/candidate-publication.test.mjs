@@ -70,7 +70,7 @@ test('synthetic publisher returns candidate-bound receipt and cannot merge',()=>
   assert.equal(receipt.mergeAttempted,false);
 });
 
-test('verification rejects base drift, stale fence and candidate drift',()=>{
+test('verification preserves a reviewed candidate across base advance but rejects stale fence and candidate drift',()=>{
   const {lease,request}=fixture();
   const receipt=createCandidatePublicationReceipt({
     request,providerId:request.providerId,providerRunId:'run-1',
@@ -78,9 +78,15 @@ test('verification rejects base drift, stale fence and candidate drift',()=>{
     remoteBranchRef:`refs/heads/${request.candidateBranch}`,
     remoteCandidateSha:candidate,remoteTreeHash:tree,pullRequestNumber:7
   });
-  assert.throws(()=>verifyCandidatePublicationReceipt({
+  const advanced=verifyCandidatePublicationReceipt({
     request,receipt,currentLease:lease,currentBaseHead:'9'.repeat(40),ledger:createCandidatePublicationLedger()
-  }),/CANDIDATE_PUBLISH_BASE_HEAD_DRIFT/);
+  });
+  assert.equal(advanced.status,'PASS');
+  assert.equal(advanced.baseAdvanced,true);
+  assert.equal(advanced.currentBaseHead,'9'.repeat(40));
+  assert.throws(()=>verifyCandidatePublicationReceipt({
+    request,receipt,currentLease:lease,currentBaseHead:'not-a-sha',ledger:createCandidatePublicationLedger()
+  }),/CANDIDATE_PUBLISH_CURRENT_BASE_HEAD_INVALID/);
   assert.throws(()=>verifyCandidatePublicationReceipt({
     request,receipt,currentLease:{...lease,generation:8},currentBaseHead:base,ledger:createCandidatePublicationLedger()
   }),/CANDIDATE_PUBLISH_STALE_LEASE_OR_FENCE/);
