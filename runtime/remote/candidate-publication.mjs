@@ -275,7 +275,12 @@ export function verifyCandidatePublicationReceipt({
   if (receipt.repositoryIdentityHash !== request.repositoryIdentityHash || receipt.baseBranch !== request.baseBranch || receipt.candidateBranch !== request.candidateBranch) {
     throw new Error('CANDIDATE_PUBLISH_RECEIPT_TARGET_MISMATCH');
   }
-  if (!sha40(currentBaseHead) || currentBaseHead.toLowerCase() !== request.baseHead) throw new Error('CANDIDATE_PUBLISH_BASE_HEAD_DRIFT');
+  if (!sha40(currentBaseHead)) throw new Error('CANDIDATE_PUBLISH_CURRENT_BASE_HEAD_INVALID');
+  // A candidate stays bound to the exact build base even if the default branch advances while
+  // build/review are running. Publishing the candidate branch/PR is safe: mergeability and any
+  // required rebase/re-review are separate gates. Rejecting here would discard reviewed work and
+  // can livelock an active repository.
+  const baseAdvanced = currentBaseHead.toLowerCase() !== request.baseHead;
   if (receipt.observedBaseHead !== request.baseHead) throw new Error('CANDIDATE_PUBLISH_OBSERVED_BASE_DRIFT');
   if (!currentLease || currentLease.generation !== request.lease.generation || currentLease.fencingTokenHash !== request.lease.fencingTokenHash) {
     throw new Error('CANDIDATE_PUBLISH_STALE_LEASE_OR_FENCE');
@@ -319,12 +324,12 @@ export function verifyCandidatePublicationReceipt({
   const existingOperation = ledger.operations.get(request.requestHash);
   if (existingOperation) {
     if (existingOperation !== receipt.receiptHash) throw new Error('CANDIDATE_PUBLISH_REPLAY_MISMATCH');
-    return Object.freeze({ status: 'PASS', idempotentReplay: true });
+    return Object.freeze({ status: 'PASS', idempotentReplay: true, baseAdvanced, currentBaseHead: currentBaseHead.toLowerCase() });
   }
 
   ledger.branches.set(branchKey, candidateBinding);
   ledger.operations.set(request.requestHash, receipt.receiptHash);
-  return Object.freeze({ status: 'PASS', idempotentReplay: false });
+  return Object.freeze({ status: 'PASS', idempotentReplay: false, baseAdvanced, currentBaseHead: currentBaseHead.toLowerCase() });
 }
 
 export function createCandidatePublicationLedger() {
