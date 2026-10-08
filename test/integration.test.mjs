@@ -436,3 +436,17 @@ test('verification Git ref mutation is rejected after command execution',()=>{
   assert.equal(run(['init',localTask],cwd,env).status,0); const result=run(['run'],cwd,env);
   assert.notEqual(result.status,0); assert.match(result.stderr,/GIT_CONTROL_STATE_TAMPERED:refs\/tags\/verify-tag/);
 });
+
+test('builder receives explicit proxy routing without inherited secrets',()=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'bar-proxy-env-')); const source=makeSourceRepo();
+  const worker=path.join(cwd,'worker.mjs');
+  fs.writeFileSync(worker,"import fs from 'node:fs';fs.writeFileSync('src/value.txt','after\\n');fs.writeFileSync('src/proxy.json',JSON.stringify({https:process.env.HTTPS_PROXY,no:process.env.NO_PROXY,secret:process.env.BAR_TEST_SECRET||null}));console.log('changed');\n");
+  const spec=realTask(source); const localTask=path.join(cwd,'task.json'); fs.writeFileSync(localTask,JSON.stringify(spec,null,2));
+  const proxy='http://127.0.0.1:18080';
+  const env=baseEnv(cwd,{BOUNDED_AGENT_GENERIC_EXECUTABLE:process.execPath,BOUNDED_AGENT_GENERIC_ARGS_JSON:JSON.stringify([worker]),HTTPS_PROXY:proxy,NO_PROXY:'localhost,127.0.0.1',BAR_TEST_SECRET:'do-not-forward'});
+  assert.equal(run(['init',localTask],cwd,env).status,0);
+  const result=run(['run'],cwd,env); assert.equal(result.status,0,result.stderr);
+  const state=JSON.parse(fs.readFileSync(stateFor(cwd),'utf8'));
+  const observed=JSON.parse(fs.readFileSync(path.join(state.workspace_path,'src','proxy.json'),'utf8'));
+  assert.deepEqual(observed,{https:proxy,no:'localhost,127.0.0.1',secret:null});
+});
