@@ -18,6 +18,10 @@ const adapterPath = name => path.resolve(import.meta.dirname, 'adapters', name);
 function workerEnv(role) {
   const env = {};
   for (const key of ['PATH','Path','PATHEXT','SystemRoot','SYSTEMROOT','WINDIR','ComSpec','COMSPEC','TEMP','TMP','TMPDIR']) if (process.env[key]) env[key] = process.env[key];
+  // Explicitly forward only network proxy routing; never inherit arbitrary credentials.
+  for (const key of ['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','ALL_PROXY','http_proxy','https_proxy','no_proxy','all_proxy']) {
+    if (process.env[key]) env[key] = process.env[key];
+  }
   if (process.env.BOUNDED_AGENT_LOCAL_PROFILE_MODE === 'inherit') {
     for (const key of ['HOME','USERPROFILE','LOCALAPPDATA','APPDATA']) if (process.env[key]) env[key] = process.env[key];
     return env;
