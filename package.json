@@ -62,6 +62,7 @@
     "demo:recover": "node runtime/controller.mjs recover",
     "gate:keygen": "node runtime/gate.mjs keygen",
     "gate:sign": "node runtime/gate.mjs sign",
-    "quickstart": "node bin/bar.mjs quickstart"
+    "quickstart": "node bin/bar.mjs quickstart",
+    "evidence:security": "node scripts/security-evidence-pack.mjs --out bar-proof/security-evidence"
   }
 }
