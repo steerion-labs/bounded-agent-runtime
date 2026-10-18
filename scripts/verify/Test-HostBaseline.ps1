@@ -25,7 +25,9 @@ foreach ($zone in $zones) {
 }
 $forbidden = @('runtime-core','runtime-state','secrets','verification-work','journal')
 foreach ($zone in $forbidden) {
-    $acl = Get-Acl (Join-Path $Root $zone)
+    $zonePath = Join-Path $Root $zone
+    if (-not (Test-Path $zonePath)) { continue }
+    $acl = Get-Acl $zonePath
     foreach ($rule in $acl.Access) {
         $sid = try { $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } catch { $rule.IdentityReference.Value }
         if ($sid -in @($builderSid,$reviewerSid)) { $failures.Add("Forbidden worker ACL grant: $sid -> $zone") }
