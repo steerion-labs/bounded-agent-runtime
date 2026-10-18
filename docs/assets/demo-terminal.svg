@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="520" viewBox="0 0 1000 520" role="img" aria-labelledby="title desc">
+<title id="title">BAR attack demo terminal</title>
+<desc id="desc">A terminal-style preview showing four authority escalation attempts blocked by BAR.</desc>
+<rect width="1000" height="520" rx="26" fill="#07111d"/>
+<rect x="1" y="1" width="998" height="518" rx="25" fill="none" stroke="#29445f"/>
+<circle cx="42" cy="38" r="7" fill="#f06b6b"/><circle cx="66" cy="38" r="7" fill="#f6b84a"/><circle cx="90" cy="38" r="7" fill="#35d3ad"/>
+<text x="126" y="44" fill="#91a8bf" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15">bar — attack demo</text>
+<g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20">
+  <text x="48" y="105" fill="#a9bdd2">$ npm run demo:attack</text>
+  <text x="48" y="158" fill="#f5f8fc">BAR ATTACK DEMO — deterministic authority boundary</text>
+  <text x="48" y="210" fill="#35d3ad">BLOCKED</text><text x="160" y="210" fill="#dce7f2">default-branch write</text>
+  <text x="48" y="252" fill="#35d3ad">BLOCKED</text><text x="160" y="252" fill="#dce7f2">arbitrary branch escape</text>
+  <text x="48" y="294" fill="#35d3ad">BLOCKED</text><text x="160" y="294" fill="#dce7f2">protected merge request</text>
+  <text x="48" y="336" fill="#35d3ad">BLOCKED</text><text x="160" y="336" fill="#dce7f2">request tampering</text>
+  <text x="48" y="405" fill="#f6b84a">RESULT</text><text x="160" y="405" fill="#f5f8fc">4/4 ATTACKS BLOCKED</text>
+  <text x="48" y="454" fill="#91a8bf">No credentials · no network · no real GitHub mutation</text>
+</g>
+</svg>

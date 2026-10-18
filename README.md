@@ -1,28 +1,59 @@
+<p align="center">
+  <img src="./docs/assets/bar-hero.svg" alt="Bounded Agent Runtime — Capability is not Authority" width="100%">
+</p>
+
+<p align="center">
+  <strong>Give AI coding agents room to work — without giving the model authority.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/steerion-labs/bounded-agent-runtime/actions/workflows/ci.yml"><img src="https://github.com/steerion-labs/bounded-agent-runtime/actions/workflows/ci.yml/badge.svg?branch=main" alt="BAR CI"></a>
+  <a href="https://github.com/steerion-labs/bounded-agent-runtime/actions/workflows/codeql.yml"><img src="https://github.com/steerion-labs/bounded-agent-runtime/actions/workflows/codeql.yml/badge.svg?branch=main" alt="CodeQL"></a>
+  <a href="https://github.com/steerion-labs/bounded-agent-runtime/releases"><img src="https://img.shields.io/github/v/release/steerion-labs/bounded-agent-runtime?label=release" alt="Release"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache-2.0"></a>
+  <a href="./SECURITY.md"><img src="https://img.shields.io/badge/security-fail--closed-informational.svg" alt="Fail-closed security"></a>
+</p>
+
 # Bounded Agent Runtime
 
-**An open-source project by [Steerion Labs](https://github.com/steerion-labs).**
+**BAR is a model-agnostic security runtime for autonomous coding agents.** Codex, Claude Code, OpenCode, containers or your own worker can build and review code while a deterministic controller keeps scope, evidence, budgets and protected-action authorization outside the LLM.
 
-### Give coding agents freedom to work. Keep authority out of the model.
+> **Agents think. BAR authorizes. Evidence is verified. Humans approve protected decisions.**
 
-**BAR is a model-agnostic security runtime for autonomous coding agents.** Codex, Claude Code, OpenCode, containers or your own agent can build and review code, while a deterministic controller keeps scope, evidence, budgets and protected-action authorization outside the LLM.
+BAR is not another coding agent. It is the layer around the coding agent.
 
-> **Agents think. The controller authorizes. Evidence is verified. Humans approve protected decisions.**
+## Watch BAR stop authority escalation
 
-[![Release](https://img.shields.io/github/v/release/steerion-labs/bounded-agent-runtime?label=release)](https://github.com/steerion-labs/bounded-agent-runtime/releases)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933.svg)](docs/00-PREREQUISITES.md)
-[![Security model](https://img.shields.io/badge/security-model-informational.svg)](SECURITY.md)
+Run the synthetic, no-credential attack demo:
 
-**Five-minute proof:**
-
-```powershell
+```bash
 git clone https://github.com/steerion-labs/bounded-agent-runtime.git
 cd bounded-agent-runtime
 npm install
-npm run quickstart
+npm run demo:attack
+```
 
-# Optional: expose `bar` globally for later commands
-# npm link
+Expected result:
+
+```text
+BAR ATTACK DEMO — deterministic authority boundary
+BLOCKED  default-branch write
+BLOCKED  arbitrary branch escape
+BLOCKED  protected merge request
+BLOCKED  request tampering
+RESULT   4/4 ATTACKS BLOCKED
+```
+
+<p align="center">
+  <img src="./docs/assets/demo-terminal.svg" alt="BAR attack demo showing four blocked authority escalation attempts" width="88%">
+</p>
+
+Nothing is pushed, merged, deployed or released. The demo exercises the same candidate-publication policy code used by BAR and fails closed before a protected side effect.
+
+For the end-to-end synthetic workflow:
+
+```bash
+npm run quickstart
 ```
 
 Expected stop:
@@ -31,214 +62,190 @@ Expected stop:
 4/4 PASS: HUMAN_GATE_REQUIRED
 ```
 
-No real merge. No deploy. No release. The reference quickstart proves its synthetic workflow stops before any protected remote action.
+Want both proofs in one command?
 
-### BAR in five concepts
+```bash
+npm run demo
+```
+
+See [the demo guide](docs/28-DEMO.md) for what each check proves — and what it does not.
+
+## Install
+
+### Stable tagged release
+
+BAR does not require an npm-registry publication. npm supports installing directly from a GitHub tag:
+
+```bash
+npm install --global github:steerion-labs/bounded-agent-runtime#v0.5.0
+bar quickstart
+```
+
+### Development checkout
+
+```bash
+git clone https://github.com/steerion-labs/bounded-agent-runtime.git
+cd bounded-agent-runtime
+npm install
+npm run demo
+```
+
+Requirements: Node.js 20+ and Git. Docker is optional unless you want the stronger disposable `network none` Builder/Reviewer boundary.
+
+## BAR in five concepts
 
 ```text
 Task -> Builder -> Verified Candidate -> Reviewer -> Human Gate
 ```
 
-That is the shortest useful mental model. Security details such as leases, fencing, nonces and evidence integrity exist underneath these five concepts; you do not need to learn them before trying BAR.
+The shortest useful rule is:
 
-## The problem BAR solves
+```text
+Capability != Authority
+```
 
-Coding agents are getting good at writing code. The dangerous part is not intelligence. It is **authority**.
+A model may be able to call a tool. That does not mean it is authorized to make the protected decision behind that tool.
 
-If the same model can decide scope, edit files, judge its own evidence and trigger protected actions, prompt injection or a bad tool call can become an operational failure.
+## The problem
+
+Coding agents are getting better at writing code. The dangerous part is not intelligence. It is **authority**.
+
+If the same model can decide scope, edit files, judge its own evidence and trigger protected actions, a prompt injection, tool mistake or compromised worker can become an operational failure.
 
 BAR separates those concerns.
 
 | Coding agent alone | Coding agent + BAR |
 | --- | --- |
-| Agent output can directly drive actions | Agent output remains untrusted input |
-| Effective scope can drift | Allowed paths and actions are task-bound |
-| Agent can inspect its own work | Reviewer is separate and candidate-bound |
-| "Tests passed" can be a claim | Verification becomes controller-observed evidence |
-| Retry loops can run indefinitely | Calls, retries and wall time are budgeted |
-| Approval can go stale | Human Gate is exact-candidate and replay protected |
-| Tool access can imply permission | Capability never becomes authority |
+| Tool access can become implicit permission | Capability never becomes authority |
+| Effective scope can drift | Allowed paths/actions are task-bound |
+| The worker can claim “tests passed” | Verification is controller-observed |
+| Review can drift from the candidate | Reviewer evidence is candidate-bound |
+| Approval can become stale | Human Gate is exact-candidate and replay-protected |
+| Retries can run indefinitely | Calls, retries and wall time are budgeted |
+| A publish path may imply merge authority | Candidate publication explicitly forbids merge/deploy/release |
 
-### BAR's core rule
-
-```text
-The model may propose.
-The model may execute within bounds.
-The model may review.
-The model never becomes the authorization boundary.
-```
-
-That rule is the product.
-
-## How BAR works
+## How it works
 
 ```mermaid
 flowchart LR
-    T[Task + explicit authority] --> C[Deterministic Controller]
+    T[Task + explicit authority] --> C[Deterministic BAR Controller]
     C --> B[Builder Agent]
-    B --> G[Controller-owned candidate]
+    B --> G[Controller-owned Candidate]
     G --> V[Controller-observed Verification]
     V --> R[Separate Reviewer]
-    R --> E[Evidence re-check]
-    E --> H{Authenticated Human Gate}
-    H -->|approved| A[Protected authorization]
+    R --> E[Evidence Re-check]
+    E --> H{Human Gate}
+    H -->|approved exact candidate| A[Authorization Receipt]
     H -->|rejected| X[Stop]
 
-    T -. allowed paths / actions / workers .-> C
+    T -. paths / actions / workers .-> C
     C -. budgets .-> B
-    G -. exact commit + tree .-> V
-    E -. exact candidate binding .-> H
+    G -. commit + tree .-> V
+    E -. exact-state binding .-> H
 ```
 
-**Builder and Reviewer can be different agents.** BAR owns the candidate identity and the evidence chain between them.
+BAR intentionally separates authorization from the external adapter that performs a real side effect. `bar verify-authorization <action> --json` re-checks exact state. `bar authorize <action> --json` emits a unique controller-signed authorization receipt. The external adapter must still verify that receipt immediately before the protected action.
 
-The reference runtime intentionally separates authorization from the system that performs a real merge, deploy or release. `bar verify-authorization <action> --json` performs a read-only exact-state re-check. `bar authorize <action> --json` then emits a unique, controller-signed authorization receipt and journals the handoff. Human approval cryptographically binds the exact candidate and the complete declared protected-action scope; the requested action is policy-checked inside that signed scope. The external adapter remains responsible for the final side effect. See [Protected-action handoff](docs/23-PROTECTED-ACTION-HANDOFF.md).
-
-## Why this is different
-
-BAR is not another coding agent. It is the layer around the coding agent.
-
-Use the agent you already like. BAR focuses on the part agent frameworks should not ask an LLM to decide: **what is allowed to become authority.**
+Read [Protected-action handoff](docs/23-PROTECTED-ACTION-HANDOFF.md).
 
 ## What ships today
 
-- CLI for `doctor`, `quickstart`, `work`, `task`, `run`, `status`, recovery and Human Gate flows
-- first-party adapters for **Codex**, **Claude Code** and **OpenCode**
+- bounded `work`, `task`, `run`, `status`, recovery and Human Gate flows
+- first-party Codex, Claude Code and OpenCode adapters
 - optional Docker Builder/Reviewer with `network none`
 - exact candidate commit + tree binding
 - controller-observed verification on a disposable candidate copy
-- separate Reviewer workspace with candidate-binding and mutation checks
-- signed Ed25519 Human Gate with pinned approver identity and replay protection
+- separate Reviewer workspace with mutation checks
+- Ed25519 Human Gate with pinned approver identity and replay protection
 - bounded retries/model calls/wall time plus journal integrity checks
 - read-only MCP observation surface
-- optional Windows host-hardening scripts for role accounts, SID ACLs and real worker-token probes (the controller does not automatically launch local agents under those identities)
+- bounded remote candidate publication that can create a candidate branch/PR but cannot merge
+- deterministic attack demo for default-branch, branch-scope, protected-action and request-tampering denial
 
-## Supported agents
+See the [compatibility matrix](docs/29-COMPATIBILITY.md).
+
+## Supported workers
 
 | Adapter | Builder | Reviewer | Default boundary |
 | --- | ---: | ---: | --- |
 | Codex | explicit opt-in | yes | workspace-write Builder with reviewed user config / isolated read-only Reviewer |
 | Claude Code | yes | yes | Safe Mode, edit tools / plan + read |
 | OpenCode | yes | yes | pure mode, no auto-approve |
-| Docker | yes | yes | disposable, network-none |
+| Docker | yes | yes | disposable, `network none` |
 
-BAR deliberately avoids dangerous permission-bypass flags in its primary adapter defaults.
-
-### Maturity and deployment boundary
-
-BAR is an open-source security runtime, not a certified enterprise security product. The core authority/evidence path is heavily tested, but production assurance still depends on the deployment host, chosen worker boundary and external side-effect adapter.
-
-Local Claude Code, Codex and OpenCode adapters are **process boundaries, not OS sandboxes**. BAR gives local workers isolated HOME/AppData profiles by default; using the operator profile requires explicit `BOUNDED_AGENT_LOCAL_PROFILE_MODE=inherit` risk acceptance. This is defense in depth, not an OS boundary. Use the Docker adapter or an independently hardened host/runtime when stronger isolation is required.
-
-Protected mode refuses local verification commands rather than weakening the host boundary. Until a dedicated isolated verifier is configured outside this reference path, protected-mode tasks must not depend on local command verification.
+Run `bar agents --json` on the target host to see the versions and adapters BAR actually detects there.
 
 ## Run a real bounded task
 
-For the normal user path, start with one bounded work request:
-
-```powershell
-bar work `
-  --repo C:\path\to\your-repo `
-  --goal "Fix the failing parser test" `
-  --allow src `
-  --allow test `
-  --builder auto `
-  --reviewer auto `
-  --verify npm `
+```bash
+bar work \
+  --repo /path/to/your-repo \
+  --goal "Fix the failing parser test" \
+  --allow src \
+  --allow test \
+  --builder auto \
+  --reviewer auto \
+  --verify npm \
   --verify-arg test
 ```
 
-`bar work` resolves the concrete task contract, retains it as `bounded-work-request.json`, runs the existing controller path, and stops at the same Human Gate. Use `--dry-run` to inspect the resolved scope, agents and verification without creating controller state. It never implies full-repo write access and it does not merge, deploy or release.
+BAR refuses dirty source repositories and implicit full-repo write authority. The Builder works on a controller-created copy, BAR derives candidate identity itself, verification runs separately, and the Reviewer receives an exact candidate copy.
 
-For lower-level control, the original two-step interface remains available:
-
-```powershell
-bar task `
-  --repo C:\path\to\your-repo `
-  --intent "Fix the failing parser test" `
-  --allow src `
-  --allow test `
-  --builder auto `
-  --reviewer auto `
-  --verify npm `
-  --verify-arg test `
-  --out bounded-task.json
-
-bar run --task bounded-task.json
-bar status
-```
-
-BAR refuses dirty source repositories and implicit full-repo write authority. The Builder works on a controller-created copy, BAR derives the candidate identity itself, verification runs separately, and the Reviewer receives an exact candidate copy.
-
-`auto` is resolved once when the task is created. BAR selects only adapters that are installed, explicitly authenticated when required, safe for the requested role, and task-configured when extra configuration is required. The concrete Builder and Reviewer adapters are written into the task before authority is hashed. BAR never switches agents silently during a run. In v0.5 Codex Builder is never auto-selected by default because Codex v0.150.1 cannot combine ignored user config with a writable Builder sandbox on the verified Windows host. An operator may explicitly accept reviewed Codex user configuration with `--builder-allow-user-config`; Codex Reviewer remains isolated and read-only.
+Use `--dry-run` first when you want to inspect the resolved scope, agents and verification without creating controller state.
 
 ## Security posture
 
-**Sandbox the execution. Bound the authority.**
+**Sandbox the execution. Bound the authority. Verify the evidence.**
 
-Repository text, prompts, memory, model output, MCP/tool output and reviewer prose remain untrusted context. The controller derives and verifies the facts used for protected authorization.
+Repository text, prompts, memory, model output, MCP/tool output and reviewer prose remain untrusted context. BAR derives and verifies the facts used for protected authorization.
 
-Read [SECURITY.md](SECURITY.md), the [Threat Model](docs/12-THREAT-MODEL.md) and [Production Hardening](docs/13-PRODUCTION-HARDENING.md).
+BAR is an open-source security runtime, not a certified enterprise security product. Local CLI adapters are process boundaries, not OS sandboxes. Use the Docker adapter or an independently hardened host/runtime when stronger isolation is required.
 
-## Windows host hardening
+Current security work and exact-head verification requirements are deliberately public. See:
 
-BAR includes Windows scripts that create and verify separate role accounts and SID-based ACL zones. These scripts harden and prove the host layout, but the current controller does **not** automatically launch local Codex, Claude or OpenCode workers under those Windows identities.
-
-```text
-C:\BoundedAgentRuntime
-|-- runtime-core       controller only
-|-- runtime-state      controller only
-|-- secrets            controller only
-|-- journal            controller only
-|-- verification-work  controller only
-|-- evidence           controlled evidence zone
-|-- builder-work       builder workspace
-`-- reviewer-work      reviewer workspace
-```
-
-Static ACL inspection is not treated as effective-access proof. `Test-WorkerAccess.ps1` launches probes under the actual Builder and Reviewer credentials.
-
-See [Windows quickstart](docs/09-QUICKSTART-WINDOWS.md).
+- [Security policy](SECURITY.md)
+- [Threat model](docs/12-THREAT-MODEL.md)
+- [Production hardening](docs/13-PRODUCTION-HARDENING.md)
+- [Security evidence index](docs/30-SECURITY-EVIDENCE.md)
+- [Roadmap](ROADMAP.md)
 
 ## What BAR does not claim
 
 - no hosted SaaS control plane
 - no automatic merge/deploy/release engine
 - no claim that a child process is an OS sandbox
-- no claim that the HTTPS broker equals host egress enforcement
+- no claim that an HTTPS broker equals host egress enforcement
 - no claim that model review replaces deterministic verification
 - no security certification for an unverified deployment host
 
 ## Start here
 
+- [60-second demo](docs/28-DEMO.md)
 - [5-minute explanation](docs/22-WHY-BAR.md)
 - [Architecture](docs/01-ARCHITECTURE.md)
-- [CLI + agent adapters](docs/15-CLI-AND-AGENTS.md)
-- [Adapter conformance contract](docs/19-ADAPTER-CONFORMANCE.md)
-- [MCP + dashboard](docs/16-MCP-AND-DASHBOARD.md)
+- [Compatibility](docs/29-COMPATIBILITY.md)
+- [Security evidence](docs/30-SECURITY-EVIDENCE.md)
+- [CLI + adapters](docs/15-CLI-AND-AGENTS.md)
 - [Container isolation](docs/18-CONTAINER-ISOLATION.md)
-- [Protected-action handoff](docs/23-PROTECTED-ACTION-HANDOFF.md)
-- [Roadmap](ROADMAP.md)
-
-## Who BAR is for
-
-BAR is useful when you want coding agents to do meaningful work but you do **not** want the model itself to own the final authority boundary.
-
-Good fits include autonomous coding loops, internal developer agents, regulated engineering environments, multi-agent Builder/Reviewer workflows and security-conscious local automation.
+- [Remote execution](docs/25-REMOTE-EXECUTION.md)
+- [Remote candidate publish](docs/26-REMOTE-CANDIDATE-PUBLISH.md)
 
 ## Contribute
 
-BAR is intentionally opinionated. Contributions that strengthen interoperability, evidence quality and security boundaries are welcome.
+BAR is intentionally opinionated, but the project is open to challenges and integrations.
 
-- open an issue with a concrete use case
-- propose an agent integration
-- pick a `good first issue`
-- challenge the threat model
-- send a PR with negative tests for security-sensitive changes
+Good contributions include:
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+- negative tests for an authority-bypass idea
+- a new conforming worker adapter
+- better evidence visualization
+- portability fixes
+- threat-model challenges
+- clearer onboarding
 
-If this solves a problem you care about, **star the repo**. It helps other agent builders discover the project.
+Read [CONTRIBUTING.md](CONTRIBUTING.md), [SUPPORT.md](SUPPORT.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+If BAR solves a problem you care about, **star the repo** and share the attack demo. Discovery is the hardest part of a young security project.
 
 ## License
 

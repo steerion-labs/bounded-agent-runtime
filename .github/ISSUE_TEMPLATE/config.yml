@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and design discussions
+    url: https://github.com/steerion-labs/bounded-agent-runtime/discussions
+    about: Ask setup questions, discuss architecture, or explore an idea before opening implementation work.
+  - name: Security policy
+    url: https://github.com/steerion-labs/bounded-agent-runtime/security/policy
+    about: Read the private-reporting guidance before disclosing a vulnerability.

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Bounded Agent Runtime keeps protected authority outside AI coding agents.">
+  <title>Bounded Agent Runtime — Capability is not Authority</title>
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <main>
+    <nav class="nav">
+      <a class="brand" href="https://github.com/steerion-labs/bounded-agent-runtime">BAR</a>
+      <div class="navlinks">
+        <a href="https://github.com/steerion-labs/bounded-agent-runtime/blob/main/docs/28-DEMO.md">Demo</a>
+        <a href="https://github.com/steerion-labs/bounded-agent-runtime/blob/main/docs/29-COMPATIBILITY.md">Compatibility</a>
+        <a href="https://github.com/steerion-labs/bounded-agent-runtime/blob/main/docs/30-SECURITY-EVIDENCE.md">Evidence</a>
+        <a class="button small" href="https://github.com/steerion-labs/bounded-agent-runtime">GitHub</a>
+      </div>
+    </nav>
+
+    <section class="hero">
+      <div class="eyebrow">BOUND THE AUTHORITY — NOT THE INTELLIGENCE</div>
+      <h1>Capability is not authority.</h1>
+      <p class="lead">Let Codex, Claude Code, OpenCode or your own worker build. BAR keeps scope, evidence and protected-action authorization outside the model.</p>
+      <div class="actions">
+        <a class="button" href="https://github.com/steerion-labs/bounded-agent-runtime/blob/main/docs/28-DEMO.md">Run the 60-second demo</a>
+        <a class="button ghost" href="https://github.com/steerion-labs/bounded-agent-runtime">View source</a>
+      </div>
+      <img class="heroimg" src="assets/bar-hero.svg" alt="BAR architecture summary">
+    </section>
+
+    <section class="proof">
+      <div>
+        <span class="kicker">THE PROOF</span>
+        <h2>Watch BAR say no.</h2>
+        <p>The public attack demo attempts a default-branch write, an arbitrary branch escape, a protected merge and request tampering. All four must fail closed.</p>
+      </div>
+      <pre><code>$ npm run demo:attack
+
+BLOCKED  default-branch write
+BLOCKED  arbitrary branch escape
+BLOCKED  protected merge request
+BLOCKED  request tampering
+RESULT   4/4 ATTACKS BLOCKED</code></pre>
+    </section>
+
+    <section>
+      <span class="kicker">THE MODEL</span>
+      <h2>Agents think. BAR authorizes.</h2>
+      <div class="grid">
+        <article><strong>1 — Task</strong><p>Explicit paths, actions, workers and budgets.</p></article>
+        <article><strong>2 — Build</strong><p>The worker operates inside the granted task authority.</p></article>
+        <article><strong>3 — Verify</strong><p>BAR binds evidence to the exact candidate commit and tree.</p></article>
+        <article><strong>4 — Review</strong><p>A separate Reviewer sees the exact candidate, not a story about it.</p></article>
+        <article><strong>5 — Human Gate</strong><p>Protected decisions remain exact-candidate human decisions.</p></article>
+        <article><strong>6 — Receipt</strong><p>An external side-effect adapter must re-check controller authorization.</p></article>
+      </div>
+    </section>
+
+    <section class="quote">
+      <p>“A tool being callable is not proof that the model is authorized to use its side effect.”</p>
+    </section>
+
+    <section>
+      <span class="kicker">WORKERS</span>
+      <h2>Keep the agent you already like.</h2>
+      <div class="pills">
+        <span>Codex</span><span>Claude Code</span><span>OpenCode</span><span>Docker</span><span>Generic CLI</span>
+      </div>
+      <p class="muted">BAR is deliberately model-agnostic. Stronger isolation comes from the deployment boundary, not from pretending a child process is a sandbox.</p>
+    </section>
+
+    <section class="cta">
+      <span class="kicker">START SMALL</span>
+      <h2>Run the synthetic proof before trusting the architecture diagram.</h2>
+      <p><code>npm run demo</code> runs the attack demo and then the Human Gate quickstart.</p>
+      <a class="button" href="https://github.com/steerion-labs/bounded-agent-runtime">Open BAR on GitHub</a>
+    </section>
+
+    <footer>
+      <span>Bounded Agent Runtime · Steerion Labs · Apache-2.0</span>
+      <span>Security claims stay exact-head and evidence-bound.</span>
+    </footer>
+  </main>
+</body>
+</html>

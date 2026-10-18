@@ -5,6 +5,7 @@ BAR follows an evidence-first roadmap. Items are direction, not promises or deli
 ## Shipped foundation
 
 - guided first-run quickstart and safer error guidance
+- public deterministic authority-attack demo
 - clear Human Gate and protected-action handoff
 - adapter conformance contract and reproducible examples
 - exact candidate and evidence binding
@@ -12,23 +13,31 @@ BAR follows an evidence-first roadmap. Items are direction, not promises or deli
 - controller-signed authorization receipts
 - recovery, fencing, replay protection and fail-closed security checks
 - Codex, Claude Code and OpenCode adapter support
+- transport-neutral remote execution contract
+- bounded candidate branch/PR publication without merge authority
 
-## Remote execution foundation
+## Proof before expansion
 
-- versioned transport-neutral remote task/result envelopes
-- exact source-HEAD, authority, worker, lease/fence, candidate and evidence binding
-- fail-closed replay, stale-fence, candidate/evidence drift and authority-widening checks
-- GitHub-hosted ephemeral reference provider with read-only checkout and machine-readable proof
-- no private project state or protected remote mutation in public BAR
+The highest-value next work is not another large feature surface. It is stronger external proof.
 
-## Next candidates
+Priority:
 
-- adapter compatibility probes that record detected CLI versions
-- signed machine-readable verification bundles
-- additional provider transports implementing the same remote contract
-- improved local read-only evidence UI
-- reviewed reference integrations that consume authorization receipts without weakening the Human Gate
-- short terminal demo / GIF for a real bounded task
+1. close the exact-head assurance gap in #85;
+2. run the isolated real-agent adversarial benchmark in #86;
+3. prove credential/filesystem/host boundaries in #87;
+4. publish the reproducible external evidence pack in #88;
+5. reduce proof-CI overhead without weakening evidence in #89.
+
+## Adoption track
+
+After the proof gates above:
+
+- publish a proof-focused v0.6 release
+- record adapter versions in machine-readable compatibility evidence
+- improve the read-only evidence UI
+- add more reviewed provider transports implementing the same remote contract
+- publish a short real-terminal recording built from the checked demo
+- consider npm-registry publication only if it materially improves installation and does not weaken release controls
 
 ## Non-goals
 
