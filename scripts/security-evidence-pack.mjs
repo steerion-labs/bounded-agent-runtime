@@ -12,7 +12,7 @@ function has(flag) { return args.includes(flag); }
 
 const outDir = path.resolve(value('--out') || 'bar-proof/security-evidence');
 const includeContainer = has('--include-container');
-const timeoutMs = Number(value('--timeout-ms') || 120000);
+const timeoutMs = Number(value('--timeout-ms') || 300000);
 
 function run(command, argv, options = {}) {
   const result = spawnSync(command, argv, {
