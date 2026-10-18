@@ -34,7 +34,7 @@ foreach ($zone in $forbidden) {
     }
 }
 if ($failures.Count) {
-    $failures | ForEach-Object { Write-Error $_ }
+    $failures | ForEach-Object { Write-Error $_ -ErrorAction Continue }
     exit 1
 }
 Write-Host 'HOST_BASELINE_PASS'
