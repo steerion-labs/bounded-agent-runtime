@@ -70,6 +70,16 @@ npm run demo
 
 See [the demo guide](docs/28-DEMO.md) for what each check proves — and what it does not.
 
+### Reproduce bounded work on a disposable Git repository
+
+```bash
+npm run demo:reference
+```
+
+This no-credential proof creates a **real temporary Git repository** using **synthetic Builder/Reviewer adapters**. It verifies the candidate commit/tree, controller evidence and source immutability and blocks two authority escalations before a side effect. It stops at `HUMAN_GATE_REQUIRED` and removes its temporary files. **This is not a live-model adversarial test or a host-isolation certification.**
+
+See the [reference walkthrough](docs/31-REFERENCE-DEMO-TASK.md) for its exact scope and limitations.
+
 ## Install
 
 ### Stable tagged release
