@@ -70,6 +70,8 @@ npm run demo
 
 See [the demo guide](docs/28-DEMO.md) for what each check proves — and what it does not.
 
+**New to BAR?** [Adopt BAR in your own repository](docs/30-ADOPTION.md) — worker discovery, a bounded dry-run, and the precise security limitations.
+
 ## Install
 
 ### Stable tagged release
