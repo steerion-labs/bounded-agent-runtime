@@ -56,6 +56,7 @@
     "doctor": "node bin/bar.mjs doctor",
     "demo": "node scripts/demo-attack.mjs && node bin/bar.mjs quickstart",
     "demo:attack": "node scripts/demo-attack.mjs",
+    "demo:reference": "node scripts/demo-reference.mjs",
     "demo:reset": "node runtime/controller.mjs reset",
     "demo:init": "node runtime/controller.mjs init examples/task.example.json",
     "demo:run": "node runtime/controller.mjs run",
