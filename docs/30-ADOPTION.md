@@ -41,7 +41,11 @@ bar work \
   --dry-run
 ```
 
-Change allowed paths and verification command for your project. Inspect dry-run scope before removing `--dry-run`. Do not run repository-controlled verification under privileged controller credentials.
+**Run BAR from a separate, user-owned working directory outside the source repository.** BAR writes a work-request audit file under its runtime root even in dry-run mode; it deliberately refuses to put that audit inside the repository being inspected. For example, open a terminal in your home directory (or another dedicated non-repository directory), **not** inside `/absolute/path/to/your-repo`.
+
+The command above uses `auto` for illustration, but BAR fails closed with `AUTO_ADAPTER_UNAVAILABLE` when it cannot select a safe Builder/Reviewer pair. Read `bar agents --json`, then choose an installed, supported and separately configured pair explicitly if required (for example `--builder claude --reviewer codex`, only if both are available). Do not bypass a safety warning or enable unsafe user config merely to make `auto` work.
+
+Change allowed paths and verification command for your project. Confirm that the result ends in `WORK_REQUEST_DRY_RUN`, and inspect the selected agents, source HEAD and scope before removing `--dry-run`. Dry-run creates no controller task state but does write a work-request audit outside the source. Do not run repository-controlled verification under privileged controller credentials.
 
 ## 4. Understand what BAR does not guarantee
 
