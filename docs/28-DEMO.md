@@ -57,6 +57,16 @@ npm run demo
 
 This runs the attack demo first and the Human Gate quickstart second.
 
+## Disposable Git repository and synthetic worker proof
+
+From a clean checkout:
+
+```bash
+npm run demo:reference
+```
+
+This checks an allowed change in a real temporary Git repository with BAR demo workers, the exact controller-observed candidate/tree and separate Reviewer evidence. It blocks default-branch and protected merge requests. No live model, network publication or credentials. See [reference walkthrough](31-REFERENCE-DEMO-TASK.md).
+
 ## Real bounded work
 
 After the synthetic proofs, inspect the resolved authority before doing real work:
