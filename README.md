@@ -45,7 +45,11 @@ RESULT   4/4 ATTACKS BLOCKED
 ```
 
 <p align="center">
-  <img src="./docs/assets/demo-terminal.svg" alt="BAR attack demo showing four blocked authority escalation attempts" width="88%">
+  <img src="./docs/assets/demo-attack.gif" alt="Terminal recording: a fresh clone of BAR runs npm install, then npm run demo:attack prints BLOCKED for default-branch write, arbitrary branch escape, protected merge request and request tampering, ending with RESULT 4/4 ATTACKS BLOCKED" width="88%">
+</p>
+
+<p align="center">
+  <sub>Recorded from a fresh public clone. Static version: <a href="./docs/assets/demo-terminal.svg">demo-terminal.svg</a> · recording source: <a href="./docs/assets/demo-attack.cast">demo-attack.cast</a></sub>
 </p>
 
 Nothing is pushed, merged, deployed or released. The demo exercises the same candidate-publication policy code used by BAR and fails closed before a protected side effect.
