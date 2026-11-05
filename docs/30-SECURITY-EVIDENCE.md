@@ -13,19 +13,29 @@ git rev-parse HEAD
 git status --porcelain
 ```
 
-Then run the local evidence that applies to the host:
+Then generate the exact-head local evidence pack:
 
 ```bash
-npm test
+npm ci --ignore-scripts
+npm run evidence:security
+```
+
+This writes `bar-proof/security-evidence/manifest.json` and `summary.md`. Each test file runs as a separate bounded process; a timeout or failure produces `REVIEW_REQUIRED`, never a blanket PASS.
+
+You can still run the human-facing proofs directly:
+
+```bash
 npm run demo:attack
 npm run quickstart
 ```
 
-When Docker is available:
+When Docker is available and container evidence is required:
 
 ```bash
-npm run test:container
+node scripts/security-evidence-pack.mjs --out bar-proof/security-evidence --include-container
 ```
+
+Or run the container test directly with `npm run test:container`.
 
 For adapter/host evidence:
 
