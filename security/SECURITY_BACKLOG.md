@@ -34,3 +34,17 @@ The independent evaluation offer from an unsolicited vendor is **not** a vulnera
 ## Existing history
 
 Earlier security work is documented in closed issues, previous commits and `security/SECURITY_MATRIX.md`. Historic references to PR #19, issue #7 and issue #8 are not active task assignments; do not use them as current work queue without a new live check. Preserve the historical record in GitHub.
+
+## November 2026 integration readback
+
+PRs #90, #95, #96 and community PR #97 were closed without merge on
+2026-10-31 as part of an earlier portfolio disposition. Their content is
+being assessed in an independent BAR-only integration branch. This
+restoration does not imply My Company adoption, completion of #85–#88,
+or approval to merge/release. The dated October source inventory above
+is historical; always use the exact current candidate HEAD/tree.
+
+For reproducible local controls, use `npm run evidence:security`.
+For live-agent/host proof use the explicit open acceptance criteria in
+issues #86 and #87; never infer separate OS identity from local child
+processes or a passing synthetic test.

@@ -49,7 +49,7 @@
     "NOTICE"
   ],
   "scripts": {
-    "test": "node --test test/*.test.mjs",
+    "test": "node scripts/run-test-suite.mjs",
     "test:container": "node --test test/container.e2e.mjs",
     "test:all": "npm test && npm run test:container",
     "bar": "node bin/bar.mjs",

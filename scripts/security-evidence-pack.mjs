@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { evaluateSecurityControls } from './security-evidence-controls.mjs';
 
 const args = process.argv.slice(2);
 function value(flag) {
@@ -134,7 +135,28 @@ if (fs.existsSync(packageLock)) {
 }
 
 const failedTests = tests.filter(t => t.status !== 'PASS');
-const overall = clean && secretScan.status === 'PASS' && failedTests.length === 0 ? 'PASS' : 'REVIEW_REQUIRED';
+
+const attackRun = run(process.execPath, ['scripts/demo-attack.mjs', '--json'], { timeout: 30000 });
+let denials = { status: 'REVIEW_REQUIRED', checks: [], reason: 'JSON demo not proven' };
+if (attackRun.status === 'PASS') {
+  try {
+    const decoded = JSON.parse(attackRun.stdout);
+    const labels = ['default-branch write', 'arbitrary branch escape',
+      'protected merge request', 'request tampering'];
+    const valid = decoded.schema_version === 'bar.attack-demo.v1' &&
+      decoded.status === 'PASS' && decoded.total_checks === 4 &&
+      decoded.blocked_checks === 4 && Array.isArray(decoded.checks) &&
+      decoded.checks.length === 4 &&
+      decoded.checks.every((c, i) => c.label === labels[i] &&
+        c.status === 'BLOCKED' && /^CANDIDATE_[A-Z_]+$/.test(c.denial_code));
+    if (valid) denials = { status: 'PASS', checks: decoded.checks };
+  } catch {}
+}
+const controls = evaluateSecurityControls(tests, { clean, secretScan, dependencyInventory, denials });
+const overall = clean && secretScan.status === 'PASS' &&
+  failedTests.length === 0 && denials.status === 'PASS' ? 'PASS' : 'REVIEW_REQUIRED';
+const assuranceStatus = 'REVIEW_REQUIRED'; // Independent host proof and Human Gate remain outside this local bundle.
+
 
 const manifest = {
   schemaVersion: 'bar.security-evidence-pack.v1',
@@ -148,6 +170,10 @@ const manifest = {
   platform: process.platform + '-' + process.arch,
   timeoutMs,
   includeContainer,
+  repositoryEvidenceStatus: overall,
+  securityAssuranceStatus: assuranceStatus,
+  securityControls: controls,
+  observedDenials: denials,
   secretScan,
   dependencyInventory,
   tests: tests.map(t => ({
@@ -174,7 +200,9 @@ const rows = tests.map(t => '| ' + t.file + ' | ' + t.status + ' |').join('\n');
 const summary = [
   '# BAR Security Evidence Pack',
   '',
-  '- Status: **' + overall + '**',
+  '- Repository evidence status: **' + overall + '** (local tests only)',
+  '- Overall security assurance: **' + assuranceStatus + '** (independent host proof and review outstanding)',
+  '- JSON denial evidence: **' + denials.status + '**',
   '- Exact HEAD: ' + head,
   '- Exact tree: ' + tree,
   '- Clean tracked state: **' + (clean ? 'PASS' : 'FAIL') + '**',
@@ -189,6 +217,12 @@ const summary = [
   '| --- | --- |',
   rows,
   '',
+  '## Security controls (repository-level scope only)',
+  '',
+  '| Control | Evidence state | Missing assurance |',
+  '| --- | --- | --- |',
+  ...controls.map(c => '| ' + c.id + ' | ' + c.status + ' | ' + c.limitation.replaceAll('|', '/') + ' |'),
+  '',
   '## Scope',
   '',
   'This bundle is exact-head local evidence. It does not certify the host, Docker daemon, credentials, external side-effect adapter, or organizational Reviewer independence.',
@@ -197,10 +231,19 @@ const summary = [
   ''
 ].join('\n');
 fs.writeFileSync(path.join(outDir, 'summary.md'), summary);
+fs.writeFileSync(path.join(outDir, 'checksums.sha256'), [
+  sha256File(path.join(outDir, 'manifest.json')) + '  manifest.json',
+  sha256File(path.join(outDir, 'summary.md')) + '  summary.md',
+  ''
+].join('\n'));
+
 
 console.log('EVIDENCE_HEAD=' + head);
 console.log('EVIDENCE_TREE=' + tree);
 console.log('EVIDENCE_SECRET_SCAN=' + secretScan.status);
+console.log('EVIDENCE_DENIALS=' + denials.status);
+console.log('EVIDENCE_CONTROLS=' + controls.map(c => c.id + ':' + c.status).join(','));
+console.log('EVIDENCE_SECURITY_ASSURANCE=' + assuranceStatus);
 console.log('EVIDENCE_TESTS_PASS=' + (tests.length - failedTests.length) + '/' + tests.length);
 console.log('EVIDENCE_STATUS=' + overall);
 console.log('EVIDENCE_MANIFEST=' + path.join(outDir, 'manifest.json'));

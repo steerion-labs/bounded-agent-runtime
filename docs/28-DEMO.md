@@ -33,6 +33,19 @@ It directly exercises BAR's candidate-publication contract and proves four narro
 
 It does **not** prove that an arbitrary host, Docker daemon, operating system, credential store or external side-effect adapter is secure. Those are separate deployment boundaries.
 
+## Machine-readable authority-denial proof
+
+For offline scripts or external reviewers, run:
+
+```bash
+node scripts/demo-attack.mjs --json
+```
+
+This prints one JSON object with schema version `bar.attack-demo.v1`,
+`status`, `total_checks`, `blocked_checks`, and four
+`checks` with denial codes. The default human-readable output is unchanged.
+No credentials, remote requests or real protected actions are involved.
+
 ## Human Gate demo
 
 Run:

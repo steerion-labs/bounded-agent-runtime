@@ -20,7 +20,22 @@ npm ci --ignore-scripts
 npm run evidence:security
 ```
 
-This writes `bar-proof/security-evidence/manifest.json` and `summary.md`. Each test file runs as a separate bounded process; a timeout or failure produces `REVIEW_REQUIRED`, never a blanket PASS.
+This writes `bar-proof/security-evidence/manifest.json`,
+`summary.md` and `checksums.sha256`. The manifest records 13
+control-level evidence states with test filenames/exit codes, observed
+machine-readable denied actions, exact HEAD/tree, tracked-file hygiene,
+platform and runtime limitations. Each test file runs as a separate
+bounded process; a timeout or failed/missing check produces
+`REVIEW_REQUIRED`, never a blanket PASS.
+
+**Crucial:** `repositoryEvidenceStatus: PASS` means only that the
+measured local repository checks passed. `securityAssuranceStatus`
+remains `REVIEW_REQUIRED` until real host boundaries and independent
+review are proven. `BAR-SEC-004/007/010/011/012` must retain
+their honest PARTIAL/BLOCKED states where full evidence is missing.
+The manifest is generated *after* fixing the exact candidate HEAD;
+generated artifacts are excluded from the source commit to avoid
+invalidating their own HEAD binding.
 
 You can still run the human-facing proofs directly:
 
@@ -45,6 +60,23 @@ bar agents --json
 ```
 
 For protected deployments, also capture the host identity/access boundary, worker egress boundary, candidate commit/tree, evidence hashes, Human Gate policy and external side-effect adapter checks.
+
+## Controlled adversarial and local host-boundary evidence
+
+```bash
+node --test test/adversarial-authority.test.mjs
+node scripts/verify/local-identity-probe.mjs
+```
+
+The first is a **deterministic policy fixture**, not a live-agent
+adversarial benchmark. The second demonstrates that a subprocess
+with the **same** OS identity can read a synthetic local canary and that
+BAR refuses local CLI workers in protected mode; its reported status
+is PARTIAL and explicitly does not prove effective isolation.
+
+See [adversarial benchmark status](../security/ADVERSARIAL-BENCHMARK.md).
+A real Linux/Windows separate-principal denial and container boundary
+still require a safely configured and authorised host.
 
 ## Public CI evidence
 

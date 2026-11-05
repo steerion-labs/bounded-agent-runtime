@@ -37,23 +37,33 @@ function request(overrides = {}) {
   });
 }
 
+const jsonMode = process.argv.includes('--json');
+if (process.argv.slice(2).filter(arg => arg === '--json').length > 1 ||
+    process.argv.slice(2).some(arg => arg !== '--json')) {
+  throw new Error('DEMO_INVALID_ARGUMENT');
+}
+
 function blocked(label, action, expected) {
   try {
     action();
   } catch (error) {
     const message = String(error?.message || error);
     if (!expected.test(message)) {
-      throw new Error(`DEMO_UNEXPECTED_DENIAL:${label}:${message}`);
+      throw new Error('DEMO_UNEXPECTED_DENIAL:' + label + ':' + message);
     }
-    console.log(`BLOCKED  ${label}`);
-    console.log(`         ${message}`);
-    return true;
+    if (!jsonMode) {
+      console.log('BLOCKED  ' + label);
+      console.log('         ' + message);
+    }
+    return { label, status: 'BLOCKED', denial_code: message.split(':')[0] };
   }
-  throw new Error(`DEMO_ATTACK_NOT_BLOCKED:${label}`);
+  throw new Error('DEMO_ATTACK_NOT_BLOCKED:' + label);
 }
 
-console.log('BAR ATTACK DEMO — deterministic authority boundary');
-console.log('No credentials. No network. No real GitHub mutation.\n');
+if (!jsonMode) {
+  console.log('BAR ATTACK DEMO — deterministic authority boundary');
+  console.log('No credentials. No network. No real GitHub mutation.\n');
+}
 
 const results = [
   blocked(
@@ -83,7 +93,17 @@ const results = [
   )
 ];
 
-if (!results.every(Boolean)) process.exitCode = 1;
+if (!results.every(result => result.status === 'BLOCKED')) process.exitCode = 1;
 
-console.log('\nRESULT   4/4 ATTACKS BLOCKED');
-console.log('BAR kept protected authority outside the worker-controlled request.');
+if (jsonMode) {
+  console.log(JSON.stringify({
+    schema_version: 'bar.attack-demo.v1',
+    status: 'PASS',
+    total_checks: results.length,
+    blocked_checks: results.filter(result => result.status === 'BLOCKED').length,
+    checks: results
+  }));
+} else {
+  console.log('\nRESULT   4/4 ATTACKS BLOCKED');
+  console.log('BAR kept protected authority outside the worker-controlled request.');
+}
