@@ -1,6 +1,6 @@
 {
   "name": "bounded-agent-runtime",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Model-agnostic security runtime for AI coding agents with bounded authority, verified evidence, separate review and human gates",
   "type": "module",
   "private": false,
@@ -50,7 +50,7 @@
   ],
   "scripts": {
     "test": "node scripts/run-test-suite.mjs",
-    "test:container": "node --test test/container.e2e.mjs",
+    "test:container": "node --test --test-concurrency=1 test/container.e2e.mjs test/container-boundary.e2e.mjs",
     "test:all": "npm test && npm run test:container",
     "bar": "node bin/bar.mjs",
     "doctor": "node bin/bar.mjs doctor",
@@ -64,6 +64,7 @@
     "gate:keygen": "node runtime/gate.mjs keygen",
     "gate:sign": "node runtime/gate.mjs sign",
     "quickstart": "node bin/bar.mjs quickstart",
-    "evidence:security": "node scripts/security-evidence-pack.mjs --out bar-proof/security-evidence"
+    "evidence:security": "node scripts/security-evidence-pack.mjs --out bar-proof/security-evidence",
+    "test:linux:boundary": "bash scripts/verify/linux-effective-access.sh"
   }
 }

@@ -2,9 +2,15 @@
 
 Notable project changes are recorded here. Security-sensitive claims remain tied to exact release evidence, not to this file alone.
 
-## Unreleased
+## Unreleased — v0.6.0 release candidate (NOT PUBLISHED)
 
 ### Added
+
+- Community terminal media with original author attribution (PR #97 via #98)
+- Disposable real Git / synthetic Builder-Reviewer demonstration
+- Machine-readable denial demo and bounded per-file test suite
+- Exact-head, checksum-verified 13-control security Evidence Pack
+- Synthetic Linux two-identity and stricter container-boundary probes
 
 - deterministic public authority-attack demo
 - compatibility and runtime evidence guide
