@@ -396,13 +396,22 @@ export function authorize(task, action) {
   return 'ALLOW';
 }
 export function assertAllowedPath(task, relativePath) {
+  if (typeof relativePath !== 'string') throw new Error('PATH_DENIED:' + String(relativePath));
   const normalized = relativePath.replace(/\\/g, '/').replace(/^\.\//, '');
-  if (!normalized || normalized.startsWith('../') || path.isAbsolute(relativePath)) throw new Error(`PATH_DENIED:${relativePath}`);
+  const segments = normalized.split('/');
+  // Reject ambiguous segments before prefix matching: a lexical prefix does
+  // not authorise a path which resolves outside that prefix.
+  if (!normalized || path.isAbsolute(relativePath) ||
+      path.win32.isAbsolute(relativePath) || path.posix.isAbsolute(normalized) ||
+      segments.some(part => part === '' || part === '.' || part === '..' ||
+        part === '.git' || part.includes('\0'))) {
+    throw new Error('PATH_DENIED:' + relativePath);
+  }
   const ok = task.allowed_paths.some(prefix => {
     const clean = prefix.replace(/\\/g, '/').replace(/\/$/, '');
     return normalized === clean || normalized.startsWith(clean + '/');
   });
-  if (!ok) throw new Error(`PATH_DENIED:${relativePath}`);
+  if (!ok) throw new Error('PATH_DENIED:' + relativePath);
   return true;
 }
 function evidenceBase(claim, payload, state, producer, trustClass) {

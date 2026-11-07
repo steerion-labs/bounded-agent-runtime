@@ -54,7 +54,10 @@ test('protected-mode execution denies same-identity CLI workers and local verifi
 test('scope check denies obvious external paths in hostile task content', () => {
   const task = validateTask(base);
   assert.equal(assertAllowedPath(task, 'demo-output/file.txt'), true);
-  for (const file of ['../private.txt', '/etc/passwd', 'other/file.txt']) {
+  for (const file of ['../private.txt', '/etc/passwd', 'other/file.txt',
+    'demo-output/../outside.txt', 'demo-output/../../outside.txt',
+    'demo-output/./ambiguous.txt', 'demo-output//ambiguous.txt',
+    'demo-output/.git/config']) {
     assert.throws(() => assertAllowedPath(task, file), /PATH_DENIED/);
   }
 });
