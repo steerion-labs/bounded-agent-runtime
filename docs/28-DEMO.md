@@ -33,6 +33,19 @@ It directly exercises BAR's candidate-publication contract and proves four narro
 
 It does **not** prove that an arbitrary host, Docker daemon, operating system, credential store or external side-effect adapter is secure. Those are separate deployment boundaries.
 
+## Machine-readable authority-denial proof
+
+For offline scripts or external reviewers, run:
+
+```bash
+node scripts/demo-attack.mjs --json
+```
+
+This prints one JSON object with schema version `bar.attack-demo.v1`,
+`status`, `total_checks`, `blocked_checks`, and four
+`checks` with denial codes. The default human-readable output is unchanged.
+No credentials, remote requests or real protected actions are involved.
+
 ## Human Gate demo
 
 Run:
@@ -56,6 +69,16 @@ npm run demo
 ```
 
 This runs the attack demo first and the Human Gate quickstart second.
+
+## Disposable Git repository and synthetic worker proof
+
+From a clean checkout:
+
+```bash
+npm run demo:reference
+```
+
+This checks an allowed change in a real temporary Git repository with BAR demo workers, the exact controller-observed candidate/tree and separate Reviewer evidence. It blocks default-branch and protected merge requests. No live model, network publication or credentials. See [reference walkthrough](31-REFERENCE-DEMO-TASK.md).
 
 ## Real bounded work
 

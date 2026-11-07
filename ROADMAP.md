@@ -44,3 +44,11 @@ After the proof gates above:
 BAR will not become a hosted company control plane, store private portfolio/project state, move policy or protected authority into an LLM, silently auto-approve protected actions, or claim a child process is an OS sandbox.
 
 Security-sensitive roadmap items require exact-head evidence, independent review and an explicit Human Gate before protected promotion.
+
+## Independent project boundary
+
+BAR is developed and released as an independent open-source security
+runtime. Its existence does not imply adoption as the production scheduler
+or controller in My Company, Paperclip/OpenCode or Cognitive OS.
+Any future integration requires its own architecture, security and
+Human Gate acceptance.

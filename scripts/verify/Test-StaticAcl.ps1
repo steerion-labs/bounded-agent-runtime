@@ -50,6 +50,6 @@ $admins = @(Get-LocalGroupMember -Group $adminGroup.Name -ErrorAction Stop | For
 foreach ($sid in @($builderSid,$reviewerSid)) {
     if ($sid -in $admins) { $failures.Add("Worker is administrator: $sid") }
 }
-if ($failures.Count) { $failures | ForEach-Object { Write-Error $_ }; exit 1 }
+if ($failures.Count) { $failures | ForEach-Object { Write-Error $_ -ErrorAction Continue }; exit 1 }
 Write-Host 'STATIC_ACL_PASS'
 Write-Host 'This is a static SID/ACL check, not a token-level effective-access proof.'
